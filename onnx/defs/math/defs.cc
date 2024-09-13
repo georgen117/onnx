@@ -2006,6 +2006,98 @@ ONNX_OPERATOR_SET_SCHEMA(
           defs::math::utils::MatMulShapeInference(ctx, 0, 1);
         }));
 
+// TODO double check the DOC string once Operators.md text is nailed down.
+static const char* MatMulNBits_ver24_doc = R"DOC(
+MatMulNBits is a MatMul with weight quantized with N bits(e.g., 2, 3, 4, 5, 6, 7).It does Matrix Multiplication like MatMul
+ with differences:
+    1. Input B is a 2D constant Matrix. Its input feature count and output feature count are specified by attribute 'K' and 'N'.
+    2. Input B is quantized with x bits which is specified by attribute 'bits'. 
+       It is quantized blockwisely along dimension 0 (e.g. column) with block size specified by attribute block_size.
+       And block_size is not an arbitrary number and must be a power of 2 and not smaller than 16, like 16, 32, 64, 128,..
+    3. Input B's scale and zero point are specified by input scales and zero_points.
+    Input B is stored as uint8_t with shape: [N][n_blocks_per_col][blob_size] in which:
+    - n_blocks_per_col = (K + block_size - 1) / block_size
+    - blob_size = CeilDiv(block_size * bits, bitsof(uint8_t)<8>)
+    For all bits from 2-8, a row of data is stored squeezely and represented by uint8_t.
+      - for 2,4,8 bits, 4x2bit,2x4bit,1x8bit are stored in one uint8_t.
+          4bit example:
+          |.|.|.|.| .|.|.|.| =uint8_t (2x4bit)
+      - for 3,5,6,7 bits, 32x3bit,32x5bit,16x6bit,32x7bit are stored in 12xuint8_t,20xuint8_t,12xuint8_t,28xuint8_t separately. no bits are wasted.
+          3bit example:
+          |.|.|. |.|.|. |.|.|. = 9bit, which across 2 uint8_t, the highest bit for the second uint8_t is used.
+    The last uint_8 may have some bits unused.
+)DOC";
+
+ONNX_OPERATOR_SET_SCHEMA(
+    MatMulNBits,
+    24,
+    OpSchema()
+        .SetDoc(MatMulNBits_ver24_doc)
+        .Attr("K", "Size of each input feature.", AttributeProto::INT)
+        .Attr("N", "Size of each output feature.", AttributeProto::INT)
+        .Attr(
+            "accuracy_level",
+            "The minimum accuracy level of input A, can be: 0(unset), 1(float), 2(float16), 3(Bfloat16), 4(int8) (default unset). "
+            "It is used to control how input A is quantized or downcast internally while doing computation, for example: 0 means "
+            "input A will not be quantized or downcast while doing computation, 4 means input A can be quantized with the same "
+            "block_size to int8 internally from type T1.",
+            AttributeProto::INT,
+            static_cast<int64_t>(0))
+        .Attr("bits", "Number of bits used for weight quantization (default 4)", AttributeProto::INT, static_cast<int64_t>(4))
+        .Attr(
+            "block_size",
+            "Number of group size used for weight quantization (default 128). It needs to be a power of 2 and not smaller than 16",
+            AttributeProto::INT,
+            static_cast<int64_t>(128))
+        .Input(0, "A", "The input tensor, not quantized", "T1", OpSchema::Single, true, 1, OpSchema::NonDifferentiable)
+        .Input(1, "B", "1 or 2 dimensional data blob", "T2", OpSchema::Single, true, 1, OpSchema::NonDifferentiable)
+        .Input(2, "scales","quantization scales", "T1", OpSchema::Single, true, 1, OpSchema::NonDifferentiable)
+        .Input(3, "zero_points", "quantization zero points", "T3", OpSchema::Optional, true, 1, OpSchema::NonDifferentiable)
+        .Input(4, "g_idx", "group index", "T4", OpSchema::Optional, true, 1, OpSchema::NonDifferentiable)
+        .Input(
+            5,
+            "bias",
+            "Bias to add to result. It should have shape [N]",
+            "T1",
+            OpSchema::Optional,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
+        .Output(
+            0,
+            "Y",
+            "Matrix multiply results. The output tensor has the same rank as the input.",
+            "T1",
+            OpSchema::Single,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
+        .TypeConstraint("T1", {"tensor(float)", "tensor(float16)"}, "Constrain input and output type to float/half_float tensors.")
+        .TypeConstraint("T2", {"tensor(uint8)", "tensor(int32)"}, "Constrain quantized weight types to uint8/int32.")
+        .TypeConstraint("T3", {"tensor(uint8)", "tensor(int32)", "tensor(float16)", "tensor(float)"},
+                        "Constrain quantized zero point types to uint8.int32/float16/float.")
+        .TypeConstraint("T4", {"tensor(int32)"}, "the index tensor")
+        .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
+          auto a_type = ctx.getInputType(0);
+          auto b_type = ctx.getInputType(1);
+          auto y_type = ctx.getOutputType(0);
+          if (nullptr == a_type || nullptr == b_type || nullptr == y_type ||
+              a_type->value_case() != ONNX_NAMESPACE::TypeProto::kTensorType ||
+              b_type->value_case() != ONNX_NAMESPACE::TypeProto::kTensorType) {
+            fail_type_inference("inputs are expected to have tensor type and output type should not be null.");
+          }
+
+          // TODO Do I need to check the scales, zero_points, g_idx, or bias?
+          //      (likely no need to check g_idx and bias as they are optional)
+          // TODO get bias check it bias has shape of [N] from "N" attr
+
+          propagateElemTypeFromInputToOutput(ctx, 0, 0);
+
+          // TODO check if the MatMulShapeInference will work. since input 1 (B) is just an input blob
+          // this likely will not work in final code.
+          defs::math::utils::MatMulShapeInference(ctx, 0, 1);
+        }));
+
 static const char* CumSum_ver14_doc = R"DOC(
 Performs cumulative sum of the input elements along the given axis.
 By default, it will do the sum inclusively meaning the first element is copied as is.

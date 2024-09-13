@@ -29444,6 +29444,31 @@ This version of the operator has been available since version 23 of the default 
 <dd>Constrain input and output types to all tensor types up to IRv11.</dd>
 </dl>
 
+## Version 24 of the default ONNX operator set
+### <a name="MatMulNBits-24"></a>**MatMulNBits-24**</a>
+
+[TODO] add discription that mirrors the description in Operators.md
+
+#### Version
+
+This version of the operators has been available since version 24 of the default ONNX operator set
+
+#### Attributes
+
+[TODO]
+
+#### Inputs
+
+[TODO]
+
+#### Outputs
+
+[TODO]
+
+#### Type Constraints
+
+[TODO]
+
 # ai.onnx.preview.training
 ## Version 1 of the 'ai.onnx.preview.training' operator set
 ### <a name="ai.onnx.preview.training.Adagrad-1"></a>**ai.onnx.preview.training.Adagrad-1**</a>
@@ -29927,4 +29952,3 @@ This version of the operator has been available since version 1 of the 'ai.onnx.
 <dt><tt>T3</tt> : tensor(float), tensor(double)</dt>
 <dd>Constrain input types to float tensors.</dd>
 </dl>
-
