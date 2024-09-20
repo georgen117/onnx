@@ -753,6 +753,17 @@ class TestAutomaticUpgrade(automatic_conversion_test_base.TestAutomaticConversio
             [TensorProto.INT32],
         )
 
+    def test_MatMulNBits_1(self) -> None:
+        self._test_op_upgrade(
+            "MatMulNBits",
+            24,
+            [[2,3], [3,4], [4]], # A, B, scales
+            [2,4],
+            [TensorProto.FLOAT, TensorProto.int8, TensorProto.FLOAT],
+            [TensorProto.FLOAT],
+            attrs={"K"=3, "N"=4},
+        )
+
     def test_Max(self) -> None:
         self._test_op_upgrade(
             "Max",

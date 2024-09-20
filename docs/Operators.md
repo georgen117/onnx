@@ -15627,7 +15627,7 @@ This version of the operator has been available since version 24 of the ONNX ope
 <dd>number of groupsize used for weight quantization,(default 128). It needs to be a power of 2 and not smaller than 16.</dd>
 </dl>
 
-#### Inputs (3 - 6)
+#### Inputs (3 - 5)
 
 <dl>
 <dt><tt>A</tt> : T1</dt>
@@ -15638,8 +15638,6 @@ This version of the operator has been available since version 24 of the ONNX ope
 <dd>quantization scale</dd>
 <dt><tt>zero_points</tt> (optional) : T3</dt>
 <dd>quantization zero points</dd>
-<dt><tt>g_idx</tt> (optional) : T4</dt>
-<dd>group_idx</dd>
 <dt><tt>bias</tt> (optional) : T1</dt>
 <dd>Bias to add to result. It should have shape [N].</dd>
 </dl>
@@ -15660,8 +15658,6 @@ This version of the operator has been available since version 24 of the ONNX ope
 <dd>Constrain quantized weight types to uint8/int32.</dd>
 <dt><tt>T3</tt> : tensor(uint8), tensor(int32), tensor(float16), tensor(float)</dt>
 <dd>Constrain quantized zero point types to uint8/int32/float16/float.</dd>
-<dt><tt>T4</tt> : tensor(int32)</dt>
-<dd>the index tensor.</dd>
 </dl>
 
 

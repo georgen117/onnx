@@ -2028,6 +2028,123 @@ MatMulNBits is a MatMul with weight quantized with N bits(e.g., 2, 3, 4, 5, 6, 7
     The last uint_8 may have some bits unused.
 )DOC";
 
+bool BuildContextDependentFunctionBodyMatMulNBits(
+    const FunctionBodyBuildContext& ctx,
+    const OpSchema& schema,
+    FunctionProto& functionProto)
+{
+  /* load attributes*/
+  auto k_attr = ctx.getAttribute("K");
+  if (!k_attr) return false;
+  int64_t K = k_attr->i();
+
+  auto n_attr = ctx.getAttribute("N");
+  if (!n_attr) return false;
+  int64_t N = n_attr->i();
+
+  auto accuracy_level_Attr = ctx.getAttribute("accuracy_level");
+  int64_t accuracy_level = (accuracy_level_Attr != nullptr) ? accuracy_level_Attr->i() : 0;
+  if (accuracy_level < 0 || accuracy_level > 4) return false;
+
+  auto bits_attr = ctx.getAttribute("bits");
+  int64_t bits = (bits_attr != nullptr) ? bits_attr->i() : 4;
+
+  auto block_size_attr = ctx.getAttribute("block_size");
+  int64_t block_size = (block_size_attr != nullptr) ? block_size_attr->i() : 128;
+
+  /* load model data types*/
+  auto* tp = ctx.getInputType(0);
+  if ((tp == nullptr) || (!tp->has_tensor_type()))
+    return false;
+  int64_t T1 = tp->tensor_type().elem_type();
+
+  tp = ctx.getInputType(1);
+  if ((tp == nullptr) || (!tp->has_tensor_type()))
+    return false;
+  int64_t T2 = tp->tensor_type().elem_type();
+
+  int64_t T3 = 0; // T3 is only use for the optional zero_points input
+  tp = ctx.getInputType(4);
+  if ((tp != nullptr) && (tp->has_tensor_type())) {
+    T3 = tp->tensor_type().elem_type();
+  }
+
+  // TODO this currently assumes the DequantizeLinear can handle B input which is not true
+  // likely need to add additonal node to handle the NBit input. (i.e. the bits attribute)
+  // the scales type does not actually match the B type. Will we need to create a custom
+  // Dequantize layer just for MatMulNBits?
+  FunctionBuilder builder(functionProto);
+  // accuracy level same as input(0) 'A'
+  if (accuracy_level == 0) {
+    if (ctx.hasInput(3)) {
+      builder.Add("dq_B = DequantizeLinear <axis = 0, block_size = @block_size> (B, scales, zero_points)");
+    } else {
+      builder.Add("dq_B = DequantizeLinear<axis = 0, block_size = @block_size> (B, scales)");
+    }
+    if (ctx.hasInput(4)) {
+      builder.Add("matmul_out = MatMul(A, dq_B)");
+      builder.Add("Y = Add (matmul_out, bias)");
+    } else {
+      builder.Add("Y = MatMul(X, dq_B)");
+    }
+  }
+  // accuracy level float, float16, bfloat16
+  if (accuracy_level == 1 || accuracy_level == 2 || accuracy_level == 3) {
+    if (ctx.hasInput(3)) {
+      builder.Add("dq_B = DequantizeLinear <axis = 0, block_size = @block_size> (B, scales, zero_points)");
+    } else {
+      builder.Add("dq_B = DequantizeLinear<axis = 0, block_size = @block_size> (B, scales)");
+    }
+    // accuracy level float
+    if (accuracy_level == 1) {
+      builder.Add("accuracy_level_float = Constant[value = float{1.0}>]()");
+      builder.Add("cast_A = CastLike(A, accuracy_level_float)");
+      builder.Add("cast_dq_B = CastLike(dq_B, accuracy_level_float)");
+    }
+    // accuracy level float16
+    if (accuracy_level == 2) {
+      builder.Add("accuracy_level_float16 = Constant[value = float16{2.0}>]()");
+      builder.Add("cast_A = CastLike(A, accuracy_level_float16)");
+      builder.Add("cast_dq_B = CastLike(dq_B, accuracy_level_float16)");
+    }
+    // accuracy level bfloat16
+    if (accuracy_level == 3) {
+      builder.Add("accuracy_level_bfloat16 = Constant[value = bfloat16{3.0}>]()");
+      builder.Add("cast_A = CastLike(A, accuracy_level_bfloat16)");
+      builder.Add("cast_dq_B = CastLike(dq_B, accuracy_level_bfloat16)");
+    }
+    builder.Add("matmul_out = MatMul(cast_A, cast_dq_B)");
+    if (ctx.hasInput(4)) {
+      builder.Add("cast_matmul_out = CastLike(matmul_out, A)");
+      builder.Add("Y = Add (cast_matmul_out, bias)");
+    } else {
+      builder.Add("Y = CastLike(matmul_out, A)");
+    }
+  }
+  // accuracy level int8
+  if (accuracy_level == 4) {
+    if (ctx.hasInput(3)) { //has zero_points
+      builder.Add("dq_B = DequantizeLinear <axis = 0, block_size = @block_size> (B, scales, zero_points)");
+    } else {
+      builder.Add("dq_B = DequantizeLinear<axis = 0, block_size = @block_size> (B, scales)");
+    }
+    // accuracy level int8
+    builder.Add("accuracy_level_int8 = Constant[value = int8{4}>]()");
+    builder.Add("cast_A = CastLike(A, accuracy_level_int8)");
+    builder.Add("cast_dq_B = CastLike(dq_B, accuracy_level_int8)");
+    builder.Add("matmul_out = MatMulInteger(cast_A, cast_dq_B)");
+    if (ctx.hasInput(4)) { // has bias
+      builder.Add("cast_matmul_out = CastLike(matmul_out, A)");
+      builder.Add("Y = Add (cast_matmul_out, bias)");
+    } else {
+      builder.Add("Y = CastLike(matmul_out, A)");
+    }
+  }
+  schema.BuildFunction(functionProto);
+  return true;
+
+}
+
 ONNX_OPERATOR_SET_SCHEMA(
     MatMulNBits,
     24,
@@ -2053,9 +2170,8 @@ ONNX_OPERATOR_SET_SCHEMA(
         .Input(1, "B", "1 or 2 dimensional data blob", "T2", OpSchema::Single, true, 1, OpSchema::NonDifferentiable)
         .Input(2, "scales","quantization scales", "T1", OpSchema::Single, true, 1, OpSchema::NonDifferentiable)
         .Input(3, "zero_points", "quantization zero points", "T3", OpSchema::Optional, true, 1, OpSchema::NonDifferentiable)
-        .Input(4, "g_idx", "group index", "T4", OpSchema::Optional, true, 1, OpSchema::NonDifferentiable)
         .Input(
-            5,
+            4,
             "bias",
             "Bias to add to result. It should have shape [N]",
             "T1",
@@ -2076,7 +2192,7 @@ ONNX_OPERATOR_SET_SCHEMA(
         .TypeConstraint("T2", {"tensor(uint8)", "tensor(int32)"}, "Constrain quantized weight types to uint8/int32.")
         .TypeConstraint("T3", {"tensor(uint8)", "tensor(int32)", "tensor(float16)", "tensor(float)"},
                         "Constrain quantized zero point types to uint8.int32/float16/float.")
-        .TypeConstraint("T4", {"tensor(int32)"}, "the index tensor")
+        .SetContextDependentFunctionBodyBuilder(BuildContextDependentFunctionBodyMatMulNBits, 24)
         .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
           auto a_type = ctx.getInputType(0);
           auto b_type = ctx.getInputType(1);
