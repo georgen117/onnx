@@ -2070,18 +2070,20 @@ bool BuildContextDependentFunctionBodyMatMulNBits(
   }
 
   // TODO this currently assumes the DequantizeLinear can handle B input which is not true
+  // This currently assumes the B input is 4 bits.
   // likely need to add additonal node to handle the NBit input. (i.e. the bits attribute)
-  // the scales type does not actually match the B type. Will we need to create a custom
-  // Dequantize layer just for MatMulNBits?
+  // the scales type does not actually match the B type.
+  // The solution I am leaning toward is adding a DequantizeLinearNBits layer see the reference
+  // implementation found in onnx/backend/test/case/node/matmulnbits.py
   FunctionBuilder builder(functionProto);
   // accuracy level same as input(0) 'A'
   if (accuracy_level == 0) {
-    if (ctx.hasInput(3)) {
+    if (ctx.hasInput(3)) { // has zero_points
       builder.Add("dq_B = DequantizeLinear <axis = 0, block_size = @block_size> (B, scales, zero_points)");
     } else {
       builder.Add("dq_B = DequantizeLinear<axis = 0, block_size = @block_size> (B, scales)");
     }
-    if (ctx.hasInput(4)) {
+    if (ctx.hasInput(4)) { // has bias
       builder.Add("matmul_out = MatMul(A, dq_B)");
       builder.Add("Y = Add (matmul_out, bias)");
     } else {
@@ -2090,7 +2092,7 @@ bool BuildContextDependentFunctionBodyMatMulNBits(
   }
   // accuracy level float, float16, bfloat16
   if (accuracy_level == 1 || accuracy_level == 2 || accuracy_level == 3) {
-    if (ctx.hasInput(3)) {
+    if (ctx.hasInput(3)) { // has zero_points
       builder.Add("dq_B = DequantizeLinear <axis = 0, block_size = @block_size> (B, scales, zero_points)");
     } else {
       builder.Add("dq_B = DequantizeLinear<axis = 0, block_size = @block_size> (B, scales)");
@@ -2114,7 +2116,7 @@ bool BuildContextDependentFunctionBodyMatMulNBits(
       builder.Add("cast_dq_B = CastLike(dq_B, accuracy_level_bfloat16)");
     }
     builder.Add("matmul_out = MatMul(cast_A, cast_dq_B)");
-    if (ctx.hasInput(4)) {
+    if (ctx.hasInput(4)) { // has bias
       builder.Add("cast_matmul_out = CastLike(matmul_out, A)");
       builder.Add("Y = Add (cast_matmul_out, bias)");
     } else {
