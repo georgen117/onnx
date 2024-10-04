@@ -757,11 +757,22 @@ class TestAutomaticUpgrade(automatic_conversion_test_base.TestAutomaticConversio
         self._test_op_upgrade(
             "MatMulNBits",
             24,
-            [[2,3], [256], [4]], # A, B, scales
-            [2,4],
-            [TensorProto.FLOAT, TensorProto.INT8, TensorProto.FLOAT],
+            [[2,3], [4,64], [4], [4], [4]], # A, B, scales, zero_points, bias
+            [[2,4]],
+            [TensorProto.FLOAT, TensorProto.UINT8, TensorProto.FLOAT, TensorProto.FLOAT, TensorProto.FLOAT],
             [TensorProto.FLOAT],
-            attrs={"K":3, "N":4},
+            attrs={"K":3, "N":4, "bits":4, "block_size":128},
+        )
+
+    def test_MatMulNBits_2(self) -> None:
+        self._test_op_upgrade(
+            "MatMulNBits",
+            24,
+            [[2,3], [4,64], [4]], # A, B, scales
+            [[2,4]],
+            [TensorProto.FLOAT, TensorProto.UINT8, TensorProto.FLOAT],
+            [TensorProto.FLOAT],
+            attrs={"K":3, "N":4, "bits":4, "block_size":128},
         )
 
     def test_Max(self) -> None:
