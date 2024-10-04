@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <cmath>
 
 #include "onnx/common/assertions.h"
 #include "onnx/defs/function.h"
@@ -2031,8 +2032,7 @@ MatMulNBits is a MatMul with weight quantized with N bits(e.g., 2, 3, 4, 5, 6, 7
 bool BuildContextDependentFunctionBodyMatMulNBits(
     const FunctionBodyBuildContext& ctx,
     const OpSchema& schema,
-    FunctionProto& functionProto)
-{
+    FunctionProto& functionProto) {
   /* load attributes*/
   auto k_attr = ctx.getAttribute("K");
   if (!k_attr) return false;
@@ -2063,27 +2063,27 @@ bool BuildContextDependentFunctionBodyMatMulNBits(
     return false;
   int64_t T2 = tp->tensor_type().elem_type();
 
-  int64_t T3 = 0; // T3 is only use for the optional zero_points input
+  int64_t T3 = 0;  // T3 is only use for the optional zero_points input
   tp = ctx.getInputType(4);
   if ((tp != nullptr) && (tp->has_tensor_type())) {
     T3 = tp->tensor_type().elem_type();
   }
 
-  // TODO this currently assumes the DequantizeLinear can handle B input which is not true
+  // TODO(georgen) this currently assumes the DequantizeLinear can handle B input which is not true
   // This currently assumes the B input is 4 bits.
-  // likely need to add additonal node to handle the NBit input. (i.e. the bits attribute)
+  // likely need to add additional node to handle the NBit input. (i.e. the bits attribute)
   // the scales type does not actually match the B type.
   // The solution I am leaning toward is adding a DequantizeLinearNBits layer see the reference
   // implementation found in onnx/backend/test/case/node/matmulnbits.py
   FunctionBuilder builder(functionProto);
   // accuracy level same as input(0) 'A'
   if (accuracy_level == 0) {
-    if (ctx.hasInput(3)) { // has zero_points
+    if (ctx.hasInput(3)) {  // has zero_points
       builder.Add("dq_B = DequantizeLinear <axis = 0, block_size = @block_size> (B, scales, zero_points)");
     } else {
       builder.Add("dq_B = DequantizeLinear<axis = 0, block_size = @block_size> (B, scales)");
     }
-    if (ctx.hasInput(4)) { // has bias
+    if (ctx.hasInput(4)) {  // has bias
       builder.Add("matmul_out = MatMul(A, dq_B)");
       builder.Add("Y = Add (matmul_out, bias)");
     } else {
@@ -2092,7 +2092,7 @@ bool BuildContextDependentFunctionBodyMatMulNBits(
   }
   // accuracy level float, float16, bfloat16
   if (accuracy_level == 1 || accuracy_level == 2 || accuracy_level == 3) {
-    if (ctx.hasInput(3)) { // has zero_points
+    if (ctx.hasInput(3)) {  // has zero_points
       builder.Add("dq_B = DequantizeLinear <axis = 0, block_size = @block_size> (B, scales, zero_points)");
     } else {
       builder.Add("dq_B = DequantizeLinear<axis = 0, block_size = @block_size> (B, scales)");
@@ -2116,7 +2116,7 @@ bool BuildContextDependentFunctionBodyMatMulNBits(
       builder.Add("cast_dq_B = CastLike(dq_B, accuracy_level_bfloat16)");
     }
     builder.Add("matmul_out = MatMul(cast_A, cast_dq_B)");
-    if (ctx.hasInput(4)) { // has bias
+    if (ctx.hasInput(4)) {  // has bias
       builder.Add("cast_matmul_out = CastLike(matmul_out, A)");
       builder.Add("Y = Add (cast_matmul_out, bias)");
     } else {
@@ -2125,7 +2125,7 @@ bool BuildContextDependentFunctionBodyMatMulNBits(
   }
   // accuracy level int8
   if (accuracy_level == 4) {
-    if (ctx.hasInput(3)) { //has zero_points
+    if (ctx.hasInput(3)) {  // has zero_points
       builder.Add("dq_B = DequantizeLinear <axis = 0, block_size = @block_size> (B, scales, zero_points)");
     } else {
       builder.Add("dq_B = DequantizeLinear<axis = 0, block_size = @block_size> (B, scales)");
@@ -2194,27 +2194,113 @@ ONNX_OPERATOR_SET_SCHEMA(
         .TypeConstraint("T2", {"tensor(uint8)", "tensor(int32)"}, "Constrain quantized weight types to uint8/int32.")
         .TypeConstraint("T3", {"tensor(uint8)", "tensor(int32)", "tensor(float16)", "tensor(float)"},
                         "Constrain quantized zero point types to uint8.int32/float16/float.")
-        // TODO enable Function Body Builder when figured out
+        // TODO(george) enable or remove Function Body Builder when issues are resolved
         //.SetContextDependentFunctionBodyBuilder(BuildContextDependentFunctionBodyMatMulNBits, 24)
         .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
+          auto k_attr = ctx.getAttribute("K");
+          int64_t K = k_attr->i();
+
+          auto n_attr = ctx.getAttribute("N");
+          int64_t N = n_attr->i();
+
+          auto bits_attr = ctx.getAttribute("bits");
+          int64_t bits = (bits_attr != nullptr) ? bits_attr->i() : 4;
+
+          auto block_size_attr = ctx.getAttribute("block_size");
+          int64_t block_size = (block_size_attr != nullptr) ? block_size_attr->i() : 128;
+
+          // n & (n-1) is a binary hack to check if n is a power of 2 it will only return zero for pow of 2
+          if (block_size < 16 || (block_size & (block_size - 1) != 0)) {
+            fail_type_inference("block_size attribute must be a a power of 2 and not smaller than 16.");
+          }
+
           auto a_type = ctx.getInputType(0);
           auto b_type = ctx.getInputType(1);
+          auto scales_type = ctx.getInputType(2);
           auto y_type = ctx.getOutputType(0);
-          if (nullptr == a_type || nullptr == b_type || nullptr == y_type ||
+          if (nullptr == a_type || nullptr == b_type || nullptr == scales_type || nullptr == y_type ||
               a_type->value_case() != ONNX_NAMESPACE::TypeProto::kTensorType ||
-              b_type->value_case() != ONNX_NAMESPACE::TypeProto::kTensorType) {
+              b_type->value_case() != ONNX_NAMESPACE::TypeProto::kTensorType ||
+              scales_type->value_case() != ONNX_NAMESPACE::TypeProto::kTensorType) {
             fail_type_inference("inputs are expected to have tensor type and output type should not be null.");
           }
 
-          // TODO Do I need to check the scales, zero_points, g_idx, or bias?
-          //      (likely no need to check g_idx and bias as they are optional)
-          // TODO get bias check it bias has shape of [N] from "N" attr
+          const auto a_shape = a_type->tensor_type().shape();
+          const auto b_shape = b_type->tensor_type().shape();
+          const auto scales_shape = scales_type->tensor_type().shape();
+          if (a_shape.dim_size() != 2 && b_shape.dim_size() != 2 && scales_shape.dim_size() != 1) {
+            fail_type_inference("Input tensors of wrong rank.");
+          }
+
+          // Input B is stored as uint8_t with shape: `[N][n_blocks_per_col * blob_size]`
+          // in which:
+          //  - `n_blocks_per_col` = `(K + block_size - 1) / block_size`
+          //  - `blob_size` = `CeilDiv(block_size * bits, bitsof(uint8_t)<8>)`
+          // intput shape A{M, K} B{N, n_blocks_per_col * blob_size}
+          if (a_shape.dim(1).has_dim_value() && a_shape.dim(1).dim_value() != K) {
+            fail_shape_inference("Incompatible dimensions for matrix multiplication. Shape A and K attribute don't match.");
+          }
+
+          if (b_shape.dim(0).has_dim_value() && b_shape.dim(0).dim_value() != N) {
+            fail_shape_inference("Incompatible dimensions for matrix multiplication. Shape B and N attribute don't match.");
+          }
+
+          int64_t n_blocks_per_col = (K + block_size - 1) / block_size;
+          int64_t blob_size = ceil(static_cast<float>(block_size * bits) / 8.0);
+          printf("n_blocks_per_col = %lld, blob_size = %lld\n", n_blocks_per_col, blob_size);
+          if (b_shape.dim(1).has_dim_value() && b_shape.dim(1).dim_value() != (n_blocks_per_col * blob_size)) {
+            fail_shape_inference("Input B dimensions is incompatable with the MatMulNBits specification.");
+          }
+
+          if (scales_shape.dim(0).has_dim_value() && ((N * n_blocks_per_col) != scales_shape.dim(0).dim_value())) {
+            fail_shape_inference("Input scales dimensions is incompatable for MatMulNBits.");
+          }
+
+          // TODO(george) Add checks for  zero_points, or bias? if they are avalible
+          if (ctx.hasInput(3)) {  // has zero_points
+            auto zero_points_type = ctx.getInputType(3);
+            if (nullptr == zero_points_type || zero_points_type->value_case() != ONNX_NAMESPACE::TypeProto::kTensorType) {
+              fail_type_inference("inputs zero_points is expected to have a tensor type.");
+            }
+
+            const auto zero_points_shape = zero_points_type->tensor_type().shape();
+            if (zero_points_shape.dim_size() != 1) {
+              fail_type_inference("Input zero_points tensor is of wrong rank.");
+            }
+            int64_t bits_per_zero_points = ceil(((N * n_blocks_per_col + 1) * bits) / 8);
+            printf("bits_per_zero_points = %lld\n", bits_per_zero_points);
+            if (zero_points_shape.dim(0).has_dim_value()) {
+              // TODO (george) is there a way to figure out the data type the zero_points is? If so we can be more
+              // accurate when it comes to doing the shape check.
+              if (!((zero_points_shape.dim(0).dim_value() == (N * n_blocks_per_col)) || // shape if dtype == scales.dtype
+                    (zero_points_shape.dim(0).dim_value() == bits_per_zero_points))) { // shape if dtype == uint8
+                    fail_shape_inference("Input zero_points dimensions is incompatable for MatMulNBits.");
+                  }
+            }
+          }
+
+          if (ctx.hasInput(4)) { // has bias
+            auto bias_type = ctx.getInputType(4);
+            if (nullptr == bias_type || bias_type->value_case() != ONNX_NAMESPACE::TypeProto::kTensorType) {
+              fail_type_inference("inputs zero_points is expected to have a tensor type.");
+            }
+
+            const auto bias_shape = bias_type->tensor_type().shape();
+            if (bias_shape.dim_size() != 1) {
+              fail_type_inference("Input bias tensor is of wrong rank.");
+            }
+
+            if (bias_shape.dim(0).has_dim_value() && bias_shape.dim(0).dim_value() != N) {
+              fail_shape_inference("Input bias dimensions is incompatable for MatMulNBits.");
+            }
+          }
 
           propagateElemTypeFromInputToOutput(ctx, 0, 0);
 
-          // TODO check if the MatMulShapeInference will work. since input 1 (B) is just an input blob
-          // this likely will not work in final code.
-          defs::math::utils::MatMulShapeInference(ctx, 0, 1);
+          ONNX_NAMESPACE::TensorShapeProto resultShape;
+          *resultShape.add_dim() = a_shape.dim(0); // M
+          *resultShape.add_dim() = b_shape.dim(0); // N
+          *ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape() = resultShape;
         }));
 
 static const char* CumSum_ver14_doc = R"DOC(

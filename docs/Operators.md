@@ -15575,7 +15575,7 @@ expect(
   2. Input B is quantized with x bits which is specified by attribute 'bits'. It is quantized blockwisely along dimension 0 (e.g. column) with block size specified by attribute block_size. And block_size is not an arbitrary number and must be a power of 2 and not smaller than 16, like 16, 32, 64, 128,..
   3. Input B's scale and zero point are specified by input scales and zero_points.
 
-      Input B is stored as uint8_t with shape: `[N][n_blocks_per_col][blob_size]`
+      Input B is stored as uint8_t with shape: `[N][n_blocks_per_col * blob_size]`
 
       in which:
         - `n_blocks_per_col` = `(K + block_size - 1) / block_size`
