@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import numpy as np
+import math
 
 import onnx
 from onnx.backend.test.case.base import Base
@@ -184,6 +185,6 @@ class MatMulNBits(Base):
                   0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8).reshape((3,8))
     scales = np.array([1.0,2.0,3.0], dtype=np.float32)
     y = matmulnbits_reference_implementation(a, b, scales, K=4, N=3, bits=4, block_size=16)
-    expect(node, inputs=[a, b, scales], outputs[y])
+    expect(node, inputs=[a, b, scales], outputs=[y], name="test_matmulnbits_only_required")
 
 # TODO(george) add a test for at least each input configuration and adjusted attribute

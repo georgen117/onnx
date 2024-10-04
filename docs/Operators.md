@@ -84,7 +84,7 @@ For an operator input/output's differentiability, it can be differentiable,
 |<a href="#LpPool">LpPool</a>|<a href="Changelog.md#LpPool-22">22</a>, <a href="Changelog.md#LpPool-18">18</a>, <a href="Changelog.md#LpPool-11">11</a>, <a href="Changelog.md#LpPool-2">2</a>, <a href="Changelog.md#LpPool-1">1</a>|
 |<a href="#MatMul">MatMul</a>|<a href="Changelog.md#MatMul-13">13</a>, <a href="Changelog.md#MatMul-9">9</a>, <a href="Changelog.md#MatMul-1">1</a>|
 |<a href="#MatMulInteger">MatMulInteger</a>|<a href="Changelog.md#MatMulInteger-10">10</a>|
-|<a href="#MatMulNBits">MatMulNBits</a>|<a href="Changelog.md#MatMulNBits-24">24</a>|
+|<a href="#MatMulNBits">MatMulNBits</a>|<a href="Changelog.md#MatMulNBits-23">23</a>|
 |<a href="#Max">Max</a>|<a href="Changelog.md#Max-13">13</a>, <a href="Changelog.md#Max-12">12</a>, <a href="Changelog.md#Max-8">8</a>, <a href="Changelog.md#Max-6">6</a>, <a href="Changelog.md#Max-1">1</a>|
 |<a href="#MaxPool">MaxPool</a>|<a href="Changelog.md#MaxPool-22">22</a>, <a href="Changelog.md#MaxPool-12">12</a>, <a href="Changelog.md#MaxPool-11">11</a>, <a href="Changelog.md#MaxPool-10">10</a>, <a href="Changelog.md#MaxPool-8">8</a>, <a href="Changelog.md#MaxPool-1">1</a>|
 |<a href="#MaxRoiPool">MaxRoiPool</a>|<a href="Changelog.md#MaxRoiPool-22">22</a>, <a href="Changelog.md#MaxRoiPool-1">1</a>|
@@ -15610,7 +15610,7 @@ expect(
 
 #### Version
 
-This version of the operator has been available since version 24 of the ONNX operator set.
+This version of the operator has been available since version 23 of the ONNX operator set.
 
 #### Attributes
 

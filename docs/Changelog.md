@@ -29445,13 +29445,13 @@ This version of the operator has been available since version 23 of the default 
 </dl>
 
 ## Version 24 of the default ONNX operator set
-### <a name="MatMulNBits-24"></a>**MatMulNBits-24**</a>
+### <a name="MatMulNBits-23"></a>**MatMulNBits-23**</a>
 
 [TODO] add discription that mirrors the description in Operators.md
 
 #### Version
 
-This version of the operators has been available since version 24 of the default ONNX operator set
+This version of the operators has been available since version 23 of the default ONNX operator set
 
 #### Attributes
 
