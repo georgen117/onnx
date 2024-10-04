@@ -168,9 +168,11 @@ def matmulnbits_reference_implementation(
     Y = c.astype(A.dtype) + bias
     return Y
 
+# TODO(george) is a pack function need to pack or quantize the numbers into NBits for testing?
+
 class MatMulNBits(Base):
   @staticmethod
-  def export_only_required() -> None:
+  def export_matmulnbits_required_inputs_only() -> None:
     node = onnx.helper.make_node(op_type = "MatMulNBits", 
                                  inputs = ['a', 'b', 'scales'],
                                  outputs = ['y'],
@@ -179,12 +181,46 @@ class MatMulNBits(Base):
                                  bits = 4,
                                  block_size = 16)
     a = np.array([1.0, 2.0, 3.0, 4.0, -1.0, -2.0, -3.0, -4.0], dtype=np.float32).reshape((2,4))
-    # TODO(george) is a pack function need to pack or quantize the numbers into NBits for testing?
     b = np.array([0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
                   0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
                   0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8).reshape((3,8))
     scales = np.array([1.0,2.0,3.0], dtype=np.float32)
     y = matmulnbits_reference_implementation(a, b, scales, K=4, N=3, bits=4, block_size=16)
-    expect(node, inputs=[a, b, scales], outputs=[y], name="test_matmulnbits_only_required")
+    expect(node, inputs=[a, b, scales], outputs=[y], name="test_matmulnbits_required_inputs_only")
 
+  @staticmethod
+  def export_matmulnbits_with_zero_points_f32() -> None:
+    node = onnx.helper.make_node(op_type = "MatMulNBits", 
+                                 inputs = ['a', 'b', 'scales', 'zero_points'],
+                                 outputs = ['y'],
+                                 K = 4,
+                                 N = 3,
+                                 bits = 4,
+                                 block_size = 16)
+    a = np.array([1.0, 2.0, 3.0, 4.0, -1.0, -2.0, -3.0, -4.0], dtype=np.float32).reshape((2,4))
+    b = np.array([0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8).reshape((3,8))
+    scales = np.array([1.0,2.0,3.0], dtype=np.float32)
+    zero_points = np.array([7.0, 7.0, 7.0], dtype=np.float32)
+    y = matmulnbits_reference_implementation(a, b, scales, zero_points, K=4, N=3, bits=4, block_size=16)
+    expect(node, inputs=[a, b, scales, zero_points], outputs=[y], name="test_matmulnbits_with_zero_points_f32")
+
+  @staticmethod
+  def export_matmulnbits_with_zero_points_u8() -> None:
+    node = onnx.helper.make_node(op_type = "MatMulNBits", 
+                                 inputs = ['a', 'b', 'scales', 'zero_points'],
+                                 outputs = ['y'],
+                                 K = 4,
+                                 N = 3,
+                                 bits = 4,
+                                 block_size = 16)
+    a = np.array([1.0, 2.0, 3.0, 4.0, -1.0, -2.0, -3.0, -4.0], dtype=np.float32).reshape((2,4))
+    b = np.array([0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8).reshape((3,8))
+    scales = np.array([1.0,2.0,3.0], dtype=np.float32)
+    zero_points = np.array([0xff, 0xf0], dtype=np.uint8)
+    y = matmulnbits_reference_implementation(a, b, scales, zero_points, K=4, N=3, bits=4, block_size=16)
+    expect(node, inputs=[a, b, scales, zero_points], outputs=[y], name="test_matmulnbits_with_zero_points_u8")
 # TODO(george) add a test for at least each input configuration and adjusted attribute
