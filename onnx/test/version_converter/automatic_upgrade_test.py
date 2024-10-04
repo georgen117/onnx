@@ -756,7 +756,7 @@ class TestAutomaticUpgrade(automatic_conversion_test_base.TestAutomaticConversio
     def test_MatMulNBits_1(self) -> None:
         self._test_op_upgrade(
             "MatMulNBits",
-            24,
+            23,
             [[2,3], [4,64], [4], [4], [4]], # A, B, scales, zero_points, bias
             [[2,4]],
             [TensorProto.FLOAT, TensorProto.UINT8, TensorProto.FLOAT, TensorProto.FLOAT, TensorProto.FLOAT],
@@ -767,7 +767,7 @@ class TestAutomaticUpgrade(automatic_conversion_test_base.TestAutomaticConversio
     def test_MatMulNBits_2(self) -> None:
         self._test_op_upgrade(
             "MatMulNBits",
-            24,
+            23,
             [[2,3], [4,64], [4]], # A, B, scales
             [[2,4]],
             [TensorProto.FLOAT, TensorProto.UINT8, TensorProto.FLOAT],
