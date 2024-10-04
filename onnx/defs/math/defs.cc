@@ -2007,12 +2007,12 @@ ONNX_OPERATOR_SET_SCHEMA(
           defs::math::utils::MatMulShapeInference(ctx, 0, 1);
         }));
 
-// TODO double check the DOC string once Operators.md text is nailed down.
+// TODO(george) double check the DOC string once Operators.md text is nailed down.
 static const char* MatMulNBits_ver24_doc = R"DOC(
 MatMulNBits is a MatMul with weight quantized with N bits(e.g., 2, 3, 4, 5, 6, 7).It does Matrix Multiplication like MatMul
  with differences:
     1. Input B is a 2D constant Matrix. Its input feature count and output feature count are specified by attribute 'K' and 'N'.
-    2. Input B is quantized with x bits which is specified by attribute 'bits'. 
+    2. Input B is quantized with x bits which is specified by attribute 'bits'.
        It is quantized blockwisely along dimension 0 (e.g. column) with block size specified by attribute block_size.
        And block_size is not an arbitrary number and must be a power of 2 and not smaller than 16, like 16, 32, 64, 128,..
     3. Input B's scale and zero point are specified by input scales and zero_points.
@@ -2034,40 +2034,46 @@ bool BuildContextDependentFunctionBodyMatMulNBits(
     const OpSchema& schema,
     FunctionProto& functionProto) {
   /* load attributes*/
-  auto k_attr = ctx.getAttribute("K");
-  if (!k_attr) return false;
-  int64_t K = k_attr->i();
+  // TODO(geroge) remove unused-varables if they are not actually needed
+  // Note: currently unused
+  // auto k_attr = ctx.getAttribute("K");
+  // if (!k_attr) return false;
+  // int64_t K = k_attr->i();
 
-  auto n_attr = ctx.getAttribute("N");
-  if (!n_attr) return false;
-  int64_t N = n_attr->i();
+  // NOTE: currently unused
+  // auto n_attr = ctx.getAttribute("N");
+  // if (!n_attr) return false;
+  // int64_t N = n_attr->i();
 
   auto accuracy_level_Attr = ctx.getAttribute("accuracy_level");
   int64_t accuracy_level = (accuracy_level_Attr != nullptr) ? accuracy_level_Attr->i() : 0;
   if (accuracy_level < 0 || accuracy_level > 4) return false;
 
-  auto bits_attr = ctx.getAttribute("bits");
-  int64_t bits = (bits_attr != nullptr) ? bits_attr->i() : 4;
+  // NOTE: currently unused
+  // auto bits_attr = ctx.getAttribute("bits");
+  // int64_t bits = (bits_attr != nullptr) ? bits_attr->i() : 4;
 
-  auto block_size_attr = ctx.getAttribute("block_size");
-  int64_t block_size = (block_size_attr != nullptr) ? block_size_attr->i() : 128;
+  // NOTE: currently unused
+  // auto block_size_attr = ctx.getAttribute("block_size");
+  // int64_t block_size = (block_size_attr != nullptr) ? block_size_attr->i() : 128;
 
   /* load model data types*/
-  auto* tp = ctx.getInputType(0);
-  if ((tp == nullptr) || (!tp->has_tensor_type()))
-    return false;
-  int64_t T1 = tp->tensor_type().elem_type();
+  // NOTE data types are currently unused
+  // auto* tp = ctx.getInputType(0);
+  // if ((tp == nullptr) || (!tp->has_tensor_type()))
+  //   return false;
+  // int64_t T1 = tp->tensor_type().elem_type();
 
-  tp = ctx.getInputType(1);
-  if ((tp == nullptr) || (!tp->has_tensor_type()))
-    return false;
-  int64_t T2 = tp->tensor_type().elem_type();
+  // tp = ctx.getInputType(1);
+  // if ((tp == nullptr) || (!tp->has_tensor_type()))
+  //   return false;
+  // int64_t T2 = tp->tensor_type().elem_type();
 
-  int64_t T3 = 0;  // T3 is only use for the optional zero_points input
-  tp = ctx.getInputType(4);
-  if ((tp != nullptr) && (tp->has_tensor_type())) {
-    T3 = tp->tensor_type().elem_type();
-  }
+  // int64_t T3 = 0;  // T3 is only use for the optional zero_points input
+  // tp = ctx.getInputType(3);
+  // if ((tp != nullptr) && (tp->has_tensor_type())) {
+  //   T3 = tp->tensor_type().elem_type();
+  // }
 
   // TODO(georgen) this currently assumes the DequantizeLinear can handle B input which is not true
   // This currently assumes the B input is 4 bits.
@@ -2210,7 +2216,7 @@ ONNX_OPERATOR_SET_SCHEMA(
           int64_t block_size = (block_size_attr != nullptr) ? block_size_attr->i() : 128;
 
           // n & (n-1) is a binary hack to check if n is a power of 2 it will only return zero for pow of 2
-          if (block_size < 16 || (block_size & (block_size - 1) != 0)) {
+          if (block_size < 16 || ((block_size & (block_size - 1)) != 0)) {
             fail_type_inference("block_size attribute must be a a power of 2 and not smaller than 16.");
           }
 
@@ -2247,7 +2253,6 @@ ONNX_OPERATOR_SET_SCHEMA(
 
           int64_t n_blocks_per_col = (K + block_size - 1) / block_size;
           int64_t blob_size = ceil(static_cast<float>(block_size * bits) / 8.0);
-          printf("n_blocks_per_col = %lld, blob_size = %lld\n", n_blocks_per_col, blob_size);
           if (b_shape.dim(1).has_dim_value() && b_shape.dim(1).dim_value() != (n_blocks_per_col * blob_size)) {
             fail_shape_inference("Input B dimensions is incompatable with the MatMulNBits specification.");
           }
@@ -2268,14 +2273,16 @@ ONNX_OPERATOR_SET_SCHEMA(
               fail_type_inference("Input zero_points tensor is of wrong rank.");
             }
             int64_t bits_per_zero_points = ceil(((N * n_blocks_per_col + 1) * bits) / 8);
-            printf("bits_per_zero_points = %lld\n", bits_per_zero_points);
             if (zero_points_shape.dim(0).has_dim_value()) {
-              // TODO (george) is there a way to figure out the data type the zero_points is? If so we can be more
-              // accurate when it comes to doing the shape check.
-              if (!((zero_points_shape.dim(0).dim_value() == (N * n_blocks_per_col)) || // shape if dtype == scales.dtype
-                    (zero_points_shape.dim(0).dim_value() == bits_per_zero_points))) { // shape if dtype == uint8
-                    fail_shape_inference("Input zero_points dimensions is incompatable for MatMulNBits.");
-                  }
+              int64_t b_dtype = b_type->tensor_type().elem_type();
+              int64_t scales_dtype = scales_type->tensor_type().elem_type();
+              int64_t zero_points_dtype = zero_points_type->tensor_type().elem_type();
+              if (zero_points_dtype == scales_dtype && zero_points_shape.dim(0).dim_value() != (N * n_blocks_per_col)) {
+                fail_shape_inference("Input zero_points dimensions is incompatable for MatMulNBits.");
+              }
+              if (zero_points_dtype == b_dtype && zero_points_shape.dim(0).dim_value() != bits_per_zero_points) {
+                fail_shape_inference("Input zero_points dimensions is incompatable for MatMulNBits.");
+              }
             }
           }
 
