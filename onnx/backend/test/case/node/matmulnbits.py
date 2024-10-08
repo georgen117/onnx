@@ -16,7 +16,6 @@ def DequantizeLinearNBits(
     zero_points: np.ndarray | None = None,
     **kwargs
 ) -> np.ndarray:
-    zero_points = zero_points if zero_points is not None else np.zeros_like(scales)
     if 'N' in kwargs:
         N = kwargs['N']
     else:
@@ -27,14 +26,11 @@ def DequantizeLinearNBits(
     else:
         print('Error: "K" attribute is required')
         return
-    if 'bits' in kwargs:
-        bits = kwargs['bits']
-    else:
-        bits = 4
-    if 'block_size' in kwargs:
-        block_size = kwargs['block_size']
-    else:
-        block_size = 128
+    bits = kwargs.get('bits', 4)
+    block_size = kwargs.get('block_size', 128)
+
+    zero_points = zero_points if zero_points is not None else np.full(scales.shape, (2 ** (bits - 1))).astype(A.dtype)
+
     # TODO(george) check if B and zero_points has the required number of bytes based on the bits and block_size
     # Input B is stored as uint8_t with shape: `[N][n_blocks_per_col][blob_size]`
     # in which:
@@ -71,10 +67,10 @@ def DequantizeLinearNBits(
 
     # total bits is actually the number of bits per row
     total_bits = n_blocks_per_col * blob_size * 8
-    for n in range(0, N):
+    for n in range(N):
         unpacked_row_buf = []
         current_bit_pos = 0
-        for n_bpc in range(0, n_blocks_per_col):
+        for n_bpc in range(n_blocks_per_col):
             unpacked_col_buf = []
             # Unpack the packed bits blob at a time or until the all K elements have been unpacked
             # this will result in block_size chunks of data the zero_points and scales can be applied to
@@ -108,10 +104,6 @@ def matmulnbits_reference_implementation(
     bias: np.ndarray | None = None,
     **kwargs
 ) -> np.ndarray:
-    # set defaults for optional inputs
-    zero_points = zero_points if zero_points is not None else np.zeros_like(scales)
-    bias = bias if bias is not None else np.array(0).astype(A.dtype)
-
     # read in attributes
     if 'N' in kwargs:
         N = kwargs['N']
@@ -123,23 +115,14 @@ def matmulnbits_reference_implementation(
     else:
         print('Error: "K" attribute is required')
         return
-    if 'accuracy_level' in kwargs:
-        # TODO(george) check accuracy level is integer 0 to 4
-        accuracy_level = kwargs['accuracy_level']
-    else:
-        accuracy_level = 0
-    if 'bits' in kwargs:
-        # TODO(george) check if bits is integer 2 to 7
-        bits = kwargs['bits']
-    else:
-        bits = 4
-    if 'block_size' in kwargs:
-        # TODO(george) check that block_size is a power of 2 >= 16
-        block_size = kwargs['block_size']
-    else:
-        block_size = 128
+    accuracy_level = kwargs.get('accuracy_level', 0)
+    bits = kwargs.get('bits', 4)
+    block_size = kwargs.get('block_size', 128)
+    # set defaults for optional inputs
+    zero_points = zero_points if zero_points is not None else np.full(scales.shape, (2 ** (bits - 1))).astype(A.dtype)
+    bias = bias if bias is not None else np.array(0).astype(A.dtype)
     # TODO(george) do we need to check if `B` and `zero_points`` has the required number of bytes based on
-    # the bits and block_size
+    # the bits and block_size.
     # Input B is stored as uint8_t with shape: `[N][n_blocks_per_col * blob_size]`
     # in which:
     #    - `n_blocks_per_col` = `(K + block_size - 1) / block_size`
@@ -173,7 +156,7 @@ def matmulnbits_reference_implementation(
 class MatMulNBits(Base):
   @staticmethod
   def export_matmulnbits_required_inputs_only() -> None:
-    node = onnx.helper.make_node(op_type = "MatMulNBits", 
+    node = onnx.helper.make_node(op_type = "MatMulNBits",
                                  inputs = ['a', 'b', 'scales'],
                                  outputs = ['y'],
                                  K = 4,
@@ -190,7 +173,7 @@ class MatMulNBits(Base):
 
   @staticmethod
   def export_matmulnbits_with_zero_points_f32() -> None:
-    node = onnx.helper.make_node(op_type = "MatMulNBits", 
+    node = onnx.helper.make_node(op_type = "MatMulNBits",
                                  inputs = ['a', 'b', 'scales', 'zero_points'],
                                  outputs = ['y'],
                                  K = 4,
@@ -208,7 +191,7 @@ class MatMulNBits(Base):
 
   @staticmethod
   def export_matmulnbits_with_zero_points_u8() -> None:
-    node = onnx.helper.make_node(op_type = "MatMulNBits", 
+    node = onnx.helper.make_node(op_type = "MatMulNBits",
                                  inputs = ['a', 'b', 'scales', 'zero_points'],
                                  outputs = ['y'],
                                  K = 4,

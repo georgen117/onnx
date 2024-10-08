@@ -2174,7 +2174,11 @@ ONNX_OPERATOR_SET_SCHEMA(
             "to int8 internally from type T1.",
             AttributeProto::INT,
             static_cast<int64_t>(0))
-        .Attr("bits", "Number of bits used for weight quantization (default 4)", AttributeProto::INT, static_cast<int64_t>(4))
+        .Attr(
+            "bits",
+            "Number of bits used for weight quantization (default 4)",
+            AttributeProto::INT,
+            static_cast<int64_t>(4))
         .Attr(
             "block_size",
             "Number of group size used for weight quantization (default 128). "
@@ -2183,8 +2187,16 @@ ONNX_OPERATOR_SET_SCHEMA(
             static_cast<int64_t>(128))
         .Input(0, "A", "The input tensor, not quantized", "T1", OpSchema::Single, true, 1, OpSchema::NonDifferentiable)
         .Input(1, "B", "1 or 2 dimensional data blob", "T2", OpSchema::Single, true, 1, OpSchema::NonDifferentiable)
-        .Input(2, "scales","quantization scales", "T1", OpSchema::Single, true, 1, OpSchema::NonDifferentiable)
-        .Input(3, "zero_points", "quantization zero points", "T3", OpSchema::Optional, true, 1, OpSchema::NonDifferentiable)
+        .Input(2, "scales", "quantization scales", "T1", OpSchema::Single, true, 1, OpSchema::NonDifferentiable)
+        .Input(
+            3,
+            "zero_points",
+            "quantization zero points",
+            "T3",
+            OpSchema::Optional,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
         .Input(
             4,
             "bias",
@@ -2209,7 +2221,7 @@ ONNX_OPERATOR_SET_SCHEMA(
         .TypeConstraint("T3", {"tensor(uint8)", "tensor(int32)", "tensor(float16)", "tensor(float)"},
                         "Constrain quantized zero point types to uint8.int32/float16/float.")
         // TODO(george) enable or remove Function Body Builder when issues are resolved
-        //.SetContextDependentFunctionBodyBuilder(BuildContextDependentFunctionBodyMatMulNBits, 24)
+        // .SetContextDependentFunctionBodyBuilder(BuildContextDependentFunctionBodyMatMulNBits, 23)
         .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
           auto k_attr = ctx.getAttribute("K");
           int64_t K = k_attr->i();
@@ -2264,11 +2276,11 @@ ONNX_OPERATOR_SET_SCHEMA(
           int64_t n_blocks_per_col = (K + block_size - 1) / block_size;
           int64_t blob_size = ceil(static_cast<float>(block_size * bits) / 8.0);
           if (b_shape.dim(1).has_dim_value() && b_shape.dim(1).dim_value() != (n_blocks_per_col * blob_size)) {
-            fail_shape_inference("Input B dimensions is incompatable with the MatMulNBits specification.");
+            fail_shape_inference("Input B dimensions is incompatible with the MatMulNBits specification.");
           }
 
           if (scales_shape.dim(0).has_dim_value() && ((N * n_blocks_per_col) != scales_shape.dim(0).dim_value())) {
-            fail_shape_inference("Input scales dimensions is incompatable for MatMulNBits.");
+            fail_shape_inference("Input scales dimensions is incompatible for MatMulNBits.");
           }
 
           // TODO(george) Add checks for  zero_points, or bias? if they are avalible
@@ -2290,15 +2302,15 @@ ONNX_OPERATOR_SET_SCHEMA(
               int64_t zero_points_dtype = zero_points_type->tensor_type().elem_type();
               if (zero_points_dtype == scales_dtype &&
                   zero_points_shape.dim(0).dim_value() != (N * n_blocks_per_col)) {
-                fail_shape_inference("Input zero_points dimensions is incompatable for MatMulNBits.");
+                fail_shape_inference("Input zero_points dimensions is incompatible for MatMulNBits.");
               }
               if (zero_points_dtype == b_dtype && zero_points_shape.dim(0).dim_value() != bits_per_zero_points) {
-                fail_shape_inference("Input zero_points dimensions is incompatable for MatMulNBits.");
+                fail_shape_inference("Input zero_points dimensions is incompatible for MatMulNBits.");
               }
             }
           }
 
-          if (ctx.hasInput(4)) { // has bias
+          if (ctx.hasInput(4)) {  // has bias
             auto bias_type = ctx.getInputType(4);
             if (nullptr == bias_type || bias_type->value_case() != ONNX_NAMESPACE::TypeProto::kTensorType) {
               fail_type_inference("inputs zero_points is expected to have a tensor type.");
@@ -2310,15 +2322,15 @@ ONNX_OPERATOR_SET_SCHEMA(
             }
 
             if (bias_shape.dim(0).has_dim_value() && bias_shape.dim(0).dim_value() != N) {
-              fail_shape_inference("Input bias dimensions is incompatable for MatMulNBits.");
+              fail_shape_inference("Input bias dimensions is incompatible for MatMulNBits.");
             }
           }
 
           propagateElemTypeFromInputToOutput(ctx, 0, 0);
 
           ONNX_NAMESPACE::TensorShapeProto resultShape;
-          *resultShape.add_dim() = a_shape.dim(0); // M
-          *resultShape.add_dim() = b_shape.dim(0); // N
+          *resultShape.add_dim() = a_shape.dim(0);  // M
+          *resultShape.add_dim() = N; // b_shape.dim(0);  // N
           *ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape() = resultShape;
         }));
 
