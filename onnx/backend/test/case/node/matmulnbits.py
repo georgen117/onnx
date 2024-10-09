@@ -43,26 +43,29 @@ def DequantizeLinearNBits(
     blob_size = math.ceil((block_size * bits)/8)
     mask = (1 << bits) - 1 # create mask of bit_size (e.g. 0b1111)
     if (zero_points.dtype != scales.dtype):
-        zp_size = N * n_blocks_per_col
         unpacked_zp = []
-        current_bit_pos = 0
+        zp_bits_per_n = math.ceil(n_blocks_per_col * bits/8)
         total_zp_bits = len(zero_points) * 8
-        while current_bit_pos < total_zp_bits and len(unpacked_zp) < zp_size:
-            byte_pos = (current_bit_pos // 8)
-            bit_offset = current_bit_pos % 8
+        for n in range(N):
+            unpacked_row_buf = []
+            current_bit_pos = 0
+            while current_bit_pos < total_zp_bits and len(unpacked_row_buf) < n_blocks_per_col:
+                byte_pos = (current_bit_pos // 8) + (n * zp_bits_per_n)
+                bit_offset = current_bit_pos % 8
 
-            bits_available = 8 - bit_offset
-            if (bits_available >= bits):
-                # all bit are in current byte
-                value = (zero_points[byte_pos] >> (bits_available - bits)) & mask
-            else:
-                #Bits are split accoss two bytes
-                upper_bits = zero_points[byte_pos] << bits - bits_available & mask
-                lower_bits = zero_points[byte_pos + 1] >> 8 - (bits - bits_available) & mask
-                value = upper_bits | lower_bits
-            unpacked_zp.append(value)
-            current_bit_pos += bits
-        # replace zero_points with unpacked zero_points
+                bits_available = 8 - bit_offset
+                if (bits_available >= bits):
+                    # all bit are in current byte
+                    value = (zero_points[byte_pos] >> (bits_available - bits)) & mask
+                else:
+                    #Bits are split accoss two bytes
+                    upper_bits = zero_points[byte_pos] << bits - bits_available & mask
+                    lower_bits = zero_points[byte_pos + 1] >> 8 - (bits - bits_available) & mask
+                    value = upper_bits | lower_bits
+                unpacked_row_buf.append(value)
+                current_bit_pos += bits
+            unpacked_zp.extend(unpacked_row_buf)
+            # replace zero_points with unpacked zero_points
         zero_points = np.array(unpacked_zp).astype(scales.dtype)
 
     # total bits is actually the number of bits per row
@@ -185,7 +188,7 @@ class MatMulNBits(Base):
                   0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
                   0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8).reshape((3,8))
     scales = np.array([1.0,2.0,3.0], dtype=np.float32)
-    zero_points = np.array([7.0, 7.0, 7.0], dtype=np.float32)
+    zero_points = np.array([8.0, 8.0, 8.0], dtype=np.float32)
     y = matmulnbits_reference_implementation(a, b, scales, zero_points, K=4, N=3, bits=4, block_size=16)
     expect(node, inputs=[a, b, scales, zero_points], outputs=[y], name="test_matmulnbits_with_zero_points_f32")
 
@@ -203,7 +206,7 @@ class MatMulNBits(Base):
                   0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
                   0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8).reshape((3,8))
     scales = np.array([1.0,2.0,3.0], dtype=np.float32)
-    zero_points = np.array([0xff, 0xf0], dtype=np.uint8)
+    zero_points = np.array([0x80, 0x80, 0x80], dtype=np.uint8)
     y = matmulnbits_reference_implementation(a, b, scales, zero_points, K=4, N=3, bits=4, block_size=16)
     expect(node, inputs=[a, b, scales, zero_points], outputs=[y], name="test_matmulnbits_with_zero_points_u8")
 # TODO(george) add a test for at least each input configuration and adjusted attribute

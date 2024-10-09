@@ -15584,11 +15584,13 @@ expect(
       For all bits from 2-8, a row of data is tightly packed and represented by uint8_t.
       - for 2,4,8 bits, 4x2bit,2x4bit,1x8bit are stored in one uint8_t.
         ```
-          4bit example: with 2x4bit values
+          4bit example: with 3x4bit values
           Value A: 4 bits (Bits 0-3 in byte 0)
           Value B: 4 bits (Bits 4-7 in byte 0)
+          Value C: 4 bits (Bits 0-3 in byte 1)
           Packed Bit Layout:
           Byte 0: [ A A A A B B B B ] -> A[0:3], B[4:7]
+          Byte 1: [ C C C C . . . . ] -> C[0:3]
         ```
       - for 3,5,6,7 bits, 32x3bit,32x5bit,16x6bit,32x7bit are stored in 12xuint8_t,20xuint8_t,12xuint8_t,28xuint8_t separately. no bits are wasted.
         ```
@@ -15605,7 +15607,7 @@ expect(
 
   Input scales is stored in same type as original type of B(float32, float16) with shape like: [N * n_blocks_per_col]
   Input zero_points is stored as uint8_t or same as type(A). It has the same packing method as input B.
-    - [CeilDiv((N * n_blocks_per_col + 1) * bits, 8)]
+    - [N * CeilDiv(n_blocks_per_col * bits, 8)]
     If zero_points has same type as A, it's not packed and has the same shape as Scales.
     If zero_points is not provided then zero_points will be set to 2^(bits - 1).
 
