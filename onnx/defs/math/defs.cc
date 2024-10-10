@@ -2147,7 +2147,7 @@ bool BuildContextDependentFunctionBodyMatMulNBits(
     builder.Add("cast_dq_B = CastLike(dq_B, accuracy_level_int8)");
     builder.Add("T_cast_dq_B = Transpose<perm = [1, 0]>(cast_dq_B)");
     builder.Add("matmul_out = MatMulInteger(cast_A, T_cast_dq_B)");
-    if (ctx.hasInput(4)) { // has bias
+    if (ctx.hasInput(4)) {  // has bias
       builder.Add("cast_matmul_out = CastLike(matmul_out, A)");
       builder.Add("Y = Add (cast_matmul_out, bias)");
     } else {
@@ -2330,7 +2330,7 @@ ONNX_OPERATOR_SET_SCHEMA(
 
           ONNX_NAMESPACE::TensorShapeProto resultShape;
           *resultShape.add_dim() = a_shape.dim(0);  // M
-          *resultShape.add_dim() = N; // b_shape.dim(0);  // N
+          *resultShape.add_dim()->set_dim_value(N); // = b_shape.dim(0);  // N
           *ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape() = resultShape;
         }));
 
