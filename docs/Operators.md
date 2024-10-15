@@ -15571,13 +15571,15 @@ expect(
   MatMulNBits is a MatMul with weight quantized with N bits(e.g., 2, 3, 4, 5, 6, 7).It does Matrix Multiplication like
   [MatMul](#matmul) with differences:
 
-  1. Input B is a 2D constant Matrix. Its input feature count and output feature count are specified by attributes 'K' and 'N'.
+  1. Input B is a 2D constant Matrix. Its input feature count and output feature count are specified by attributes 'K'
+     and 'N'.
   2. Input B is quantized with x bits which is specified by attribute 'bits'. It is quantized blockwisely along
      dimension 0 (e.g. column) with block size specified by attribute block_size. And block_size is not an arbitrary
      number and must be a power of 2 and not smaller than 16, like 16, 32, 64, 128,..
   3. Input B's scale and zero point are specified by input scales and zero_points.
 
-      Input B is stored as uint8_t with shape: `[N][n_blocks_per_col * blob_size]`
+      Input B is stored as uint8_t with shape: `[N][n_blocks_per_col][blob_size]` or 
+      `[N][n_blocks_per_col * blob_size]`
 
       in which:
         - `n_blocks_per_col` = `(K + block_size - 1) / block_size`
@@ -15627,14 +15629,14 @@ This version of the operator has been available since version 23 of the ONNX ope
 
 <dl>
 <dt><tt>K</tt> : int (required)</dt>
-<dd>size of each input feature</dd>
+<dd>size of each input feature. If not present, should be inferred from input A.</dd>
 <dt><tt>N</tt> : int (required)</dt>
-<dd>size of each output feature</dd>
+<dd>size of each output feature. If not present, should be inferred from input B.</dd>
 <dt><tt>accuracy_level</tt> : int</dt>
 <dd>The minimum accuracy level of input A, can be: 0(unset), 1(fp32), 2(fp16), 3(bf16), or 4(int8) (default unset). It is used to control how input A is quantized or downcast internally while doing computation, for example: 0 means input A will not be quantized or downcast while doing computation. 4 means input A can be quantized with the same block_size to int8 internally from type T1.</dd>
-<dt><tt>bits</tt> : int (required)</dt>
+<dt><tt>bits</tt> : int</dt>
 <dd>number of bits used for weight quantization (default 4)</dd>
-<dt><tt>block_size</tt> : int (required)</dt>
+<dt><tt>block_size</tt> : int</dt>
 <dd>number of groupsize used for weight quantization,(default 128). It needs to be a power of 2 and not smaller than 16.</dd>
 </dl>
 
@@ -15644,7 +15646,7 @@ This version of the operator has been available since version 23 of the ONNX ope
 <dt><tt>A</tt> : T1</dt>
 <dd>The input tensor, not quantized</dd>
 <dt><tt>B</tt> : T2</dt>
-<dd>1 or 2 dimensional data blob</dd>
+<dd>is a data blob containing the packed B bits.</dd>
 <dt><tt>scales</tt> : T1</dt>
 <dd>quantization scale</dd>
 <dt><tt>zero_points</tt> (optional) : T3</dt>

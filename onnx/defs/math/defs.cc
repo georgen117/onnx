@@ -2181,7 +2181,7 @@ ONNX_OPERATOR_SET_SCHEMA(
             static_cast<int64_t>(4))
         .Attr(
             "block_size",
-            "Number of group size used for weight quantization (default 128). "
+            "Number of groupsize used for weight quantization (default 128). "
             "It needs to be a power of 2 and not smaller than 16",
             AttributeProto::INT,
             static_cast<int64_t>(128))
@@ -2330,7 +2330,7 @@ ONNX_OPERATOR_SET_SCHEMA(
 
           ONNX_NAMESPACE::TensorShapeProto resultShape;
           *resultShape.add_dim() = a_shape.dim(0);  // M
-          *resultShape.add_dim()->set_dim_value(N); // = b_shape.dim(0);  // N
+          resultShape.add_dim()->set_dim_value(N); // = b_shape.dim(0);  // N
           *ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape() = resultShape;
         }));
 
