@@ -15673,8 +15673,6 @@ This version of the operator has been available since version 23 of the ONNX ope
 <dd>Constrain quantized zero point types to uint8/int32/float16/float.</dd>
 </dl>
 
-
-
 ### <a name="Max"></a><a name="max">**Max**</a>
 
   Element-wise max of each of the input tensors (with Numpy-style broadcasting support).
