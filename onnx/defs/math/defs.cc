@@ -2163,8 +2163,16 @@ ONNX_OPERATOR_SET_SCHEMA(
     23,
     OpSchema()
         .SetDoc(MatMulNBits_ver23_doc)
-        .Attr("K", "Size of each input feature.", AttributeProto::INT)
-        .Attr("N", "Size of each output feature.", AttributeProto::INT)
+        .Attr(
+            "K",
+            "Size of each input feature. If not present, should be inferred from input A.",
+            AttributeProto::INT,
+            OPTIONAL_VALUE)
+        .Attr(
+            "N",
+            "Size of each output feature. If not present, should be inferred from input B.",
+            AttributeProto::INT,
+            OPTIONAL_VALUE)
         .Attr(
             "accuracy_level",
             "The minimum accuracy level of input A, can be: "
@@ -2181,7 +2189,7 @@ ONNX_OPERATOR_SET_SCHEMA(
             static_cast<int64_t>(4))
         .Attr(
             "block_size",
-            "Number of groupsize used for weight quantization (default 128). "
+            "Number of groupsize used for weight quantization (default 128)."
             "It needs to be a power of 2 and not smaller than 16",
             AttributeProto::INT,
             static_cast<int64_t>(128))
@@ -2217,17 +2225,17 @@ ONNX_OPERATOR_SET_SCHEMA(
             OpSchema::NonDifferentiable)
         .TypeConstraint("T1", {"tensor(float)", "tensor(float16)"},
                         "Constrain input and output type to float/half_float tensors.")
-        .TypeConstraint("T2", {"tensor(uint8)", "tensor(int32)"}, "Constrain quantized weight types to uint8/int32.")
-        .TypeConstraint("T3", {"tensor(uint8)", "tensor(int32)", "tensor(float16)", "tensor(float)"},
+        .TypeConstraint("T2", {"tensor(uint8)"}, "Constrain quantized weight types to uint8/int32.")
+        .TypeConstraint("T3", {"tensor(uint8)", "tensor(float16)", "tensor(float)"},
                         "Constrain quantized zero point types to uint8.int32/float16/float.")
         // TODO(george) enable or remove Function Body Builder when issues are resolved
         // .SetContextDependentFunctionBodyBuilder(BuildContextDependentFunctionBodyMatMulNBits, 23)
         .TypeAndShapeInferenceFunction([](ONNX_NAMESPACE::InferenceContext& ctx) {
           auto k_attr = ctx.getAttribute("K");
-          int64_t K = k_attr->i();
+          int64_t K = (k_attr != nullptr) ? k_attr->i() : -1;
 
           auto n_attr = ctx.getAttribute("N");
-          int64_t N = n_attr->i();
+          int64_t N = (n_attr != nullptr) ? n_attr->i() : -1;
 
           auto bits_attr = ctx.getAttribute("bits");
           int64_t bits = (bits_attr != nullptr) ? bits_attr->i() : 4;
@@ -2254,15 +2262,31 @@ ONNX_OPERATOR_SET_SCHEMA(
           const auto a_shape = a_type->tensor_type().shape();
           const auto b_shape = b_type->tensor_type().shape();
           const auto scales_shape = scales_type->tensor_type().shape();
-          if (a_shape.dim_size() != 2 && b_shape.dim_size() != 2 && scales_shape.dim_size() != 1) {
-            fail_type_inference("Input tensors of wrong rank.");
+          if (a_shape.dim_size() != 2) {
+            fail_type_inference("Input A tensor of wrong rank.");
+          }
+          if (b_shape.dim_size() < 2 || b_shape.dim_size() > 3) {
+            fail_type_inference("Input B tensor of wrong rank.");
+          }
+          if (scales_shape.dim_size() != 1) {
+            fail_type_inference("Input scales tensor of wrong rank.");
           }
 
-          // Input B is stored as uint8_t with shape: `[N][n_blocks_per_col * blob_size]`
+          // if K attribute is not present, it should be inferred from input A
+          if ( K == -1 && a_shape.dim(1).has_dim_value()) {
+            K = a_shape.dim(1).dim_value();
+          }
+
+          // if N attribute is not present, it should be inferred from input B
+          if ( N == -1 && b_shape.dim(0).has_dim_value()) {
+            N = b_shape.dim(0).dim_value();
+          }
+
+          // Input B is stored as uint8_t with shape: `[N][n_blocks_per_col][blob_size]`
           // in which:
           //  - `n_blocks_per_col` = `(K + block_size - 1) / block_size`
           //  - `blob_size` = `CeilDiv(block_size * bits, bitsof(uint8_t)<8>)`
-          // intput shape A{M, K} B{N, n_blocks_per_col * blob_size}
+          // intput shape A{M, K} B{N, n_blocks_per_col, blob_size}
           if (a_shape.dim(1).has_dim_value() && a_shape.dim(1).dim_value() != K) {
             fail_shape_inference("Incompatible dimensions for matrix multiplication. "
                                  "Shape A and K attribute don't match.");
@@ -2275,8 +2299,17 @@ ONNX_OPERATOR_SET_SCHEMA(
 
           int64_t n_blocks_per_col = (K + block_size - 1) / block_size;
           int64_t blob_size = ceil(static_cast<float>(block_size * bits) / 8.0);
-          if (b_shape.dim(1).has_dim_value() && b_shape.dim(1).dim_value() != (n_blocks_per_col * blob_size)) {
-            fail_shape_inference("Input B dimensions is incompatible with the MatMulNBits specification.");
+          // B input must be of shape [N][n_blocks_per_col][blob_size] or [N][n_blocks_per_col * blob_size]
+          if (b_shape.dim_size() == 2) {
+            if (b_shape.dim(1).has_dim_value() && b_shape.dim(1).dim_value() != (n_blocks_per_col * blob_size)) {
+              fail_shape_inference("Input B dimensions is incompatible with the MatMulNBits specification.");
+            }
+          }
+          if (b_shape.dim_size() == 3) {
+            if (b_shape.dim(1).has_dim_value() && b_shape.dim(2).has_dim_value() &&
+                !(b_shape.dim(1).dim_value() == n_blocks_per_col && b_shape.dim(2).dim_value() == blob_size)) {
+              fail_shape_inference("Input B dimensions is incompatible with the MatMulNBits specification.");
+            }
           }
 
           if (scales_shape.dim(0).has_dim_value() && ((N * n_blocks_per_col) != scales_shape.dim(0).dim_value())) {
@@ -2330,7 +2363,7 @@ ONNX_OPERATOR_SET_SCHEMA(
 
           ONNX_NAMESPACE::TensorShapeProto resultShape;
           *resultShape.add_dim() = a_shape.dim(0);  // M
-          resultShape.add_dim()->set_dim_value(N); // = b_shape.dim(0);  // N
+          resultShape.add_dim()->set_dim_value(N);  // N
           *ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape() = resultShape;
         }));
 

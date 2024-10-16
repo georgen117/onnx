@@ -15578,7 +15578,7 @@ expect(
      number and must be a power of 2 and not smaller than 16, like 16, 32, 64, 128,..
   3. Input B's scale and zero point are specified by input scales and zero_points.
 
-      Input B is stored as uint8_t with shape: `[N][n_blocks_per_col][blob_size]` or 
+      Input B is stored as uint8_t with shape: `[N][n_blocks_per_col][blob_size]` or
       `[N][n_blocks_per_col * blob_size]`
 
       in which:
@@ -15628,9 +15628,9 @@ This version of the operator has been available since version 23 of the ONNX ope
 #### Attributes
 
 <dl>
-<dt><tt>K</tt> : int (required)</dt>
+<dt><tt>K</tt> : int</dt>
 <dd>size of each input feature. If not present, should be inferred from input A.</dd>
-<dt><tt>N</tt> : int (required)</dt>
+<dt><tt>N</tt> : int</dt>
 <dd>size of each output feature. If not present, should be inferred from input B.</dd>
 <dt><tt>accuracy_level</tt> : int</dt>
 <dd>The minimum accuracy level of input A, can be: 0(unset), 1(fp32), 2(fp16), 3(bf16), or 4(int8) (default unset). It is used to control how input A is quantized or downcast internally while doing computation, for example: 0 means input A will not be quantized or downcast while doing computation. 4 means input A can be quantized with the same block_size to int8 internally from type T1.</dd>
@@ -15667,9 +15667,9 @@ This version of the operator has been available since version 23 of the ONNX ope
 <dl>
 <dt><tt>T1</tt> : tensor(float), tensor(float16)</dt>
 <dd>Constrain input and output types to float/half_float tensors.</dd>
-<dt><tt>T2</tt> : tensor(uint8), tensor(int32)</dt>
+<dt><tt>T2</tt> : tensor(uint8)</dt>
 <dd>Constrain quantized weight types to uint8/int32.</dd>
-<dt><tt>T3</tt> : tensor(uint8), tensor(int32), tensor(float16), tensor(float)</dt>
+<dt><tt>T3</tt> : tensor(uint8), tensor(float16), tensor(float)</dt>
 <dd>Constrain quantized zero point types to uint8/int32/float16/float.</dd>
 </dl>
 
