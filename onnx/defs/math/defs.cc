@@ -2007,7 +2007,6 @@ ONNX_OPERATOR_SET_SCHEMA(
           defs::math::utils::MatMulShapeInference(ctx, 0, 1);
         }));
 
-// TODO(george) double check the DOC string once Operators.md text is nailed down.
 static const char* MatMulNBits_ver23_doc = R"DOC(
 MatMulNBits is a MatMul with weight quantized with N bits(e.g., 2, 3, 4, 5, 6, 7).It does Matrix Multiplication like
 [MatMul](#matmul) with differences:
