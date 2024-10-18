@@ -11,7 +11,11 @@ from onnx.backend.test.case.base import Base
 from onnx.backend.test.case.node import expect
 from typing import Tuple
 
-def matmulnbits_unpack_zero_points(zero_points: np.ndarray, N: int, n_blocks_per_col: int, bits: int) -> np.ndarray:
+def matmulnbits_unpack_zero_points(
+    zero_points: np.ndarray,
+    N: int, n_blocks_per_col: int,
+    bits: int
+) -> np.ndarray:
     unpacked_zp = []
     zp_bits_per_n = math.ceil(n_blocks_per_col * bits / 8)
     total_zp_bits = len(zero_points) * 8
@@ -37,11 +41,17 @@ def matmulnbits_unpack_zero_points(zero_points: np.ndarray, N: int, n_blocks_per
 
     return np.array(unpacked_zp, dtype=np.uint8)
 
-def matmulnbits_unpack_B(B: np.ndarray, N: int, K: int, n_blocks_per_col: int, bits: int, block_size: int) -> np.ndarray:
+def matmulnbits_unpack_B(
+    B: np.ndarray,
+    N: int,
+    K: int,
+    n_blocks_per_col: int,
+    bits: int,
+    block_size: int
+) -> np.ndarray:
     total_bits = n_blocks_per_col * math.ceil((block_size * bits) / 8) * 8
     mask = (1 << bits) - 1
     unpacked_B = np.empty((N, K), dtype=np.uint8)
-
     for n in range(N):
         unpacked_row_buf = []
         current_bit_pos = 0
@@ -94,13 +104,16 @@ def matmulnbits_dequantize_B(
         for n_bpc in range(n_blocks_per_col):
             start = n_bpc * block_size
             end = min(start + block_size, K)
-            Y[n, start:end] = (unpacked_X[n, start:end] - zero_points[n * n_blocks_per_col + n_bpc]) * scales[n * n_blocks_per_col + n_bpc]
+            zeropoint = zero_points[n * n_blocks_per_col + n_bpc]
+            scale = scales[n * n_blocks_per_col + n_bpc]
+            Y[n, start:end] = (unpacked_X[n, start:end] - zeropoint) * scale
 
     return Y
 
 def matmulnbits_quantize_A_block_wise_no_zp(
-        X: np.ndarray,
-        block_size: int) -> Tuple[np.ndarray, np.ndarray]:
+    X: np.ndarray,
+    block_size: int
+) -> Tuple[np.ndarray, np.ndarray]:
     M = X.shape[0]
     K = X.shape[1]
     num_blocks = (K + block_size - 1) // block_size
@@ -121,11 +134,11 @@ def matmulnbits_quantize_A_block_wise_no_zp(
     return quantized_X, scales
 
 def matmulnbits_dequantize_A_block_wise(
-        quantized_A: np.ndarray,
-        block_size: int,
-        scales: np.ndarray,
-        zero_points: np.ndarray | None = None
-    ) -> np.ndarray:
+    quantized_A: np.ndarray,
+    block_size: int,
+    scales: np.ndarray,
+    zero_points: np.ndarray | None = None
+) -> np.ndarray:
     M, K = quantized_A.shape
     num_blocks = (K + block_size - 1) // block_size
     dequantized_X = np.zeros_like(quantized_A, dtype=np.float32)
@@ -136,10 +149,7 @@ def matmulnbits_dequantize_A_block_wise(
             end = min(start + block_size, K)
             quantized_block = quantized_A[m, start:end]
             scale = scales[m * num_blocks + i]
-            if(zero_points is None):
-                zero_point = 0
-            else:
-                zero_point = zero_points[m * num_blocks + i]
+            zero_point = zero_points[m * num_blocks + i] if zero_points is not None else 0
             dequantized_block = (quantized_block - zero_point) * scale
             dequantized_X[m, start:end] = dequantized_block
 
@@ -164,10 +174,13 @@ def matmulnbits_reference_implementation(
     # set defaults for optional inputs
     zero_points = zero_points if zero_points is not None else np.full(scales.shape, (2 ** (bits - 1))).astype(A.dtype)
     bias = bias if bias is not None else np.array(0).astype(A.dtype)
+    if (B.ndim == 3):
+        # reshape B from [N][n_blocks_per_col][blob_size] to [N][n_blocks_per_col * blob_size]
+        B = B.reshape((B.shape[0], -1))
     # TODO(george) do we need to check if `B` and `zero_points` has the required number of bytes based on
     # the bits and block_size.
     dq_B = matmulnbits_dequantize_B(B, scales, zero_points, K = K, N = N, bits = bits, block_size = block_size)
-    
+
     # accuracy_level defaults to 0 which means the type used for matmul type matches A.dtype
     accuracy_map = {
        0: A.dtype,
@@ -197,15 +210,20 @@ class MatMulNBits(Base):
   def export_matmulnbits_required_inputs_only() -> None:
     node = onnx.helper.make_node(op_type = "MatMulNBits",
                                  inputs = ['a', 'b', 'scales'],
-                                 outputs = ['y'],
-                                 K = 4,
-                                 N = 3,
-                                 bits = 4,
-                                 block_size = 16)
+                                 outputs = ['y'])
     a = np.array([1.0, 2.0, 3.0, 4.0, -1.0, -2.0, -3.0, -4.0], dtype=np.float32).reshape((2,4))
-    b = np.array([0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
-                  0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
-                  0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8).reshape((3,8))
+    b = np.array([0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,], dtype=np.uint8).reshape((3,64))
     scales = np.array([1.0,2.0,3.0], dtype=np.float32)
     y = matmulnbits_reference_implementation(a, b, scales, K=4, N=3, bits=4, block_size=16)
     expect(node, inputs=[a, b, scales], outputs=[y], name="test_matmulnbits_required_inputs_only")
@@ -215,18 +233,30 @@ class MatMulNBits(Base):
     node = onnx.helper.make_node(op_type = "MatMulNBits",
                                  inputs = ['a', 'b', 'scales', 'zero_points', 'bias'],
                                  outputs = ['y'],
-                                 K = 4,
-                                 N = 3,
+                                 accuracy_level = 0,
+                                 K = 33,
+                                 N = 2,
                                  bits = 4,
                                  block_size = 16)
-    a = np.array([1.0, 2.0, 3.0, 4.0, -1.0, -2.0, -3.0, -4.0], dtype=np.float32).reshape((2,4))
-    b = np.array([0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
-                  0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
-                  0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8).reshape((3,8))
-    scales = np.array([1.0,2.0,3.0], dtype=np.float32)
-    zero_points = np.array([7.0, 8.0, 9.0], dtype=np.float32)
+    a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+                  17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0,
+                  33.0,
+                  -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0, -11.0, -12.0, -13.0, -14.0, -15.0,
+                  -16.0,-17.0, -18.0, -19.0, -20.0, -21.0, -22.0, -23.0, -24.0, -25.0, -26.0, -27.0, -28.0, -29.0,
+                  -30.0, -31.0, -32.0, -33.0,], dtype=np.float32).reshape((2,33))
+    b = np.array([0x11,0x11,0x11,0x11,0x11,0x11,0x11,0x11,
+                  0x11,0x11,0x11,0x11,0x11,0x11,0x11,0x11,
+                  0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x11,0x11,0x11,0x11,0x11,0x11,0x11,0x11,
+                  0x11,0x11,0x11,0x11,0x11,0x11,0x11,0x11,
+                  0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x11,0x11,0x11,0x11,0x11,0x11,0x11,0x11,
+                  0x11,0x11,0x11,0x11,0x11,0x11,0x11,0x11,
+                  0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,], dtype=np.uint8).reshape((3,3,8))
+    scales = np.array([1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0], dtype=np.float32)
+    zero_points = np.array([7.0, 8.0, 9.0, 7.0, 8.0, 9.0, 7.0, 8.0, 9.0], dtype=np.float32)
     bias = np.array([1.2, 3.4, 5.6], dtype=np.float32)
-    y = matmulnbits_reference_implementation(a, b, scales, zero_points, bias, K=4, N=3, bits=4, block_size=16)
+    y = matmulnbits_reference_implementation(a, b, scales, zero_points, bias, K=33, N=3, accuracy_level = 0, bits=4, block_size=16)
     expect(node, inputs=[a, b, scales, zero_points, bias], outputs=[y], name="test_matmulnbits_all_inputs")
 
   @staticmethod
@@ -354,4 +384,152 @@ class MatMulNBits(Base):
     scales = np.array([1.0,2.0,3.0], dtype=np.float32)
     y = matmulnbits_reference_implementation(a, b, scales, K=4, N=3, bits=4, block_size=16)
     expect(node, inputs=[a, b, scales], outputs=[y], name="test_matmulnbits_accuracy_level_4")
+
+  @staticmethod
+  def export_matmulnbits_2bit() -> None:
+    node = onnx.helper.make_node(op_type = "MatMulNBits",
+                                 inputs = ['a', 'b', 'scales', 'zero_points', 'bias'],
+                                 outputs = ['y'],
+                                 accuracy_level = 0,
+                                 K = 33,
+                                 N = 2,
+                                 bits = 2,
+                                 block_size = 16)
+    a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+                  17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0,
+                  33.0,
+                  -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0, -11.0, -12.0, -13.0, -14.0, -15.0,
+                  -16.0,-17.0, -18.0, -19.0, -20.0, -21.0, -22.0, -23.0, -24.0, -25.0, -26.0, -27.0, -28.0, -29.0,
+                  -30.0, -31.0, -32.0, -33.0,], dtype=np.float32).reshape((2,33))
+                #  4    8    12   16   20   24   28   32  36   40   44   48 
+    b = np.array([0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x01,0x00,0x00,0x00,
+                  0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x01,0x00,0x00,0x00,
+                  0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x01,0x00,0x00,0x00,], dtype=np.uint8).reshape((3,3,4))
+    scales = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
+    zero_points = np.array([0x00,0x00,0x00], dtype=np.uint8)
+    bias = np.array([0, 0, 0], dtype=np.float32)
+    y = matmulnbits_reference_implementation(a, b, scales, zero_points, bias, K=33, N=3, accuracy_level = 0, bits=2, block_size=16)
+    expect(node, inputs=[a, b, scales, zero_points, bias], outputs=[y], name="test_matmulnbits_2bit")
+
+  @staticmethod
+  def export_matmulnbits_2bit() -> None:
+    node = onnx.helper.make_node(op_type = "MatMulNBits",
+                                 inputs = ['a', 'b', 'scales', 'zero_points', 'bias'],
+                                 outputs = ['y'],
+                                 accuracy_level = 0,
+                                 K = 33,
+                                 N = 2,
+                                 bits = 2,
+                                 block_size = 16)
+    a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+                  17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0,
+                  33.0,
+                  -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0, -11.0, -12.0, -13.0, -14.0, -15.0,
+                  -16.0,-17.0, -18.0, -19.0, -20.0, -21.0, -22.0, -23.0, -24.0, -25.0, -26.0, -27.0, -28.0, -29.0,
+                  -30.0, -31.0, -32.0, -33.0,], dtype=np.float32).reshape((2,33))
+                #  4    8    12   16   20   24   28   32  36   40   44   48 
+    b = np.array([0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x01,0x00,0x00,0x00,
+                  0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x01,0x00,0x00,0x00,
+                  0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x55,0x01,0x00,0x00,0x00,], dtype=np.uint8).reshape((3,3,4))
+    scales = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
+    zero_points = np.array([0x00,0x00,0x00], dtype=np.uint8)
+    bias = np.array([0, 0, 0], dtype=np.float32)
+    y = matmulnbits_reference_implementation(a, b, scales, zero_points, bias, K=33, N=3, accuracy_level = 0, bits=2, block_size=16)
+    expect(node, inputs=[a, b, scales, zero_points, bias], outputs=[y], name="test_matmulnbits_2bit")
+
+  @staticmethod
+  def export_matmulnbits_3bit() -> None:
+    node = onnx.helper.make_node(op_type = "MatMulNBits",
+                                 inputs = ['a', 'b', 'scales', 'zero_points', 'bias'],
+                                 outputs = ['y'],
+                                 K = 33,
+                                 N = 2,
+                                 bits = 3,
+                                 block_size = 16)
+    a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+                  17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0,
+                  33.0,
+                  -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0, -11.0, -12.0, -13.0, -14.0, -15.0,
+                  -16.0,-17.0, -18.0, -19.0, -20.0, -21.0, -22.0, -23.0, -24.0, -25.0, -26.0, -27.0, -28.0, -29.0,
+                  -30.0, -31.0, -32.0, -33.0,], dtype=np.float32).reshape((2,33))
+                #            8              16             24             32
+    b = np.array([0x49,0x92,0x24,0x49,0x92,0x24,0x49,0x92,0x24,0x49,0x92,0x24,0x01,0x00,0x00,0x00,0x00,0x00,
+                  0x49,0x92,0x24,0x49,0x92,0x24,0x49,0x92,0x24,0x49,0x92,0x24,0x01,0x00,0x00,0x00,0x00,0x00,
+                  0x49,0x92,0x24,0x49,0x92,0x24,0x49,0x92,0x24,0x49,0x92,0x24,0x01,0x00,0x00,0x00,0x00,0x00,], dtype=np.uint8).reshape((3,3,6))
+    scales = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
+    zero_points = np.array([0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8)
+    bias = np.array([0, 0, 0], dtype=np.float32)
+    y = matmulnbits_reference_implementation(a, b, scales, zero_points, bias, K=33, N=3, bits=3, block_size=16)
+    expect(node, inputs=[a, b, scales, zero_points, bias], outputs=[y], name="test_matmulnbits_3bit")
+
+  @staticmethod
+  def export_matmulnbits_5bit() -> None:
+    node = onnx.helper.make_node(op_type = "MatMulNBits",
+                                 inputs = ['a', 'b', 'scales', 'zero_points', 'bias'],
+                                 outputs = ['y'],
+                                 K = 20,
+                                 N = 2,
+                                 bits = 5,
+                                 block_size = 16)
+    a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+                  17.0, 18.0, 19.0, 20.0,
+                  -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0, -11.0, -12.0, -13.0, -14.0, -15.0,
+                  -16.0,-17.0, -18.0, -19.0, -20.0,], dtype=np.float32).reshape((2,20))
+                #                       8                       16                       24
+    b = np.array([0x21,0x84,0x10,0x42,0x08,0x21,0x84,0x10,0x42,0x08,0x21,0x84,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x21,0x84,0x10,0x42,0x08,0x21,0x84,0x10,0x42,0x08,0x21,0x84,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x21,0x84,0x10,0x42,0x08,0x21,0x84,0x10,0x42,0x08,0x21,0x84,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,],
+                 dtype=np.uint8).reshape((3,2,10))
+    scales = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
+    zero_points = np.array([0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8)
+    bias = np.array([0, 0, 0], dtype=np.float32)
+    y = matmulnbits_reference_implementation(a, b, scales, zero_points, bias, K=20, N=3, bits=5, block_size=16)
+    expect(node, inputs=[a, b, scales, zero_points, bias], outputs=[y], name="test_matmulnbits_5bit")
+
+  @staticmethod
+  def export_matmulnbits_6bit() -> None:
+    node = onnx.helper.make_node(op_type = "MatMulNBits",
+                                 inputs = ['a', 'b', 'scales', 'zero_points', 'bias'],
+                                 outputs = ['y'],
+                                 K = 20,
+                                 N = 2,
+                                 bits = 6,
+                                 block_size = 16)
+    a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+                  17.0, 18.0, 19.0, 20.0,
+                  -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0, -11.0, -12.0, -13.0, -14.0, -15.0,
+                  -16.0,-17.0, -18.0, -19.0, -20.0,], dtype=np.float32).reshape((2,20))
+                #            4              8              12            16              20
+    b = np.array([0x41,0x10,0x04,0x41,0x10,0x04,0x41,0x10,0x04,0x41,0x10,0x04,0x41,0x10,0x04,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x41,0x10,0x04,0x41,0x10,0x04,0x41,0x10,0x04,0x41,0x10,0x04,0x41,0x10,0x04,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+                  0x41,0x10,0x04,0x41,0x10,0x04,0x41,0x10,0x04,0x41,0x10,0x04,0x41,0x10,0x04,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,],
+                 dtype=np.uint8).reshape((3,2,12))
+    scales = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
+    zero_points = np.array([0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8)
+    bias = np.array([0, 0, 0], dtype=np.float32)
+    y = matmulnbits_reference_implementation(a, b, scales, zero_points, bias, K=20, N=3, bits=6, block_size=16)
+    expect(node, inputs=[a, b, scales, zero_points, bias], outputs=[y], name="test_matmulnbits_6bit")
+
+  @staticmethod
+  def export_matmulnbits_7bit() -> None:
+    node = onnx.helper.make_node(op_type = "MatMulNBits",
+                                 inputs = ['a', 'b', 'scales', 'zero_points', 'bias'],
+                                 outputs = ['y'],
+                                 K = 16,
+                                 N = 2,
+                                 bits = 7,
+                                 block_size = 16)
+    a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+                  -1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0, -10.0, -11.0, -12.0, -13.0, -14.0, -15.0,
+                  -16.0,], dtype=np.float32).reshape((2,16))
+                #                                 8                                  16
+    b = np.array([0x81,0x40,0x20,0x10,0x08,0x04,0x02,0x81,0x40,0x20,0x10,0x08,0x04,0x02,
+                  0x81,0x40,0x20,0x10,0x08,0x04,0x02,0x81,0x40,0x20,0x10,0x08,0x04,0x02,
+                  0x81,0x40,0x20,0x10,0x08,0x04,0x02,0x81,0x40,0x20,0x10,0x08,0x04,0x02,],
+                 dtype=np.uint8).reshape((3,14))
+    scales = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
+    zero_points = np.array([0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8)
+    bias = np.array([0, 0, 0], dtype=np.float32)
+    y = matmulnbits_reference_implementation(a, b, scales, zero_points, bias, K=16, N=3, bits=7, block_size=16)
+    expect(node, inputs=[a, b, scales, zero_points, bias], outputs=[y], name="test_matmulnbits_7bit")
 # TODO(george) add a test for at least each input configuration and adjusted attribute
