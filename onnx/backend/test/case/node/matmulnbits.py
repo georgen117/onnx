@@ -98,8 +98,8 @@ def matmulnbits_dequantize_B(
         zero_points = matmulnbits_unpack_zero_points(zero_points, N, n_blocks_per_col, bits).astype(scales.dtype)
 
     unpacked_X = matmulnbits_unpack_B(B, N, K, n_blocks_per_col, bits, block_size).astype(scales.dtype)
-    Y = np.empty((N, K), dtype=scales.dtype)
 
+    Y = np.empty((N, K), dtype=scales.dtype)
     for n in range(N):
         for n_bpc in range(n_blocks_per_col):
             start = n_bpc * block_size
@@ -165,20 +165,18 @@ def matmulnbits_reference_implementation(
     bias: np.ndarray | None = None,
     **kwargs
 ) -> np.ndarray:
-    # read in attributes
+    # read in attributes and optional inputs if not provided use default values
     K = kwargs.get('K', A.shape[1])
     N = kwargs.get('N', B.shape[0])
     accuracy_level = kwargs.get('accuracy_level', 0)
     bits = kwargs.get('bits', 4)
     block_size = kwargs.get('block_size', 128)
-    # set defaults for optional inputs
     zero_points = zero_points if zero_points is not None else np.full(scales.shape, (2 ** (bits - 1))).astype(A.dtype)
     bias = bias if bias is not None else np.array(0).astype(A.dtype)
+
     if (B.ndim == 3):
         # reshape B from [N][n_blocks_per_col][blob_size] to [N][n_blocks_per_col * blob_size]
         B = B.reshape((B.shape[0], -1))
-    # TODO(george) do we need to check if `B` and `zero_points` has the required number of bytes based on
-    # the bits and block_size.
     dq_B = matmulnbits_dequantize_B(B, scales, zero_points, K = K, N = N, bits = bits, block_size = block_size)
 
     # accuracy_level defaults to 0 which means the type used for matmul type matches A.dtype
@@ -202,8 +200,6 @@ def matmulnbits_reference_implementation(
         c = np.matmul(A.astype(matmul_type), np.transpose(dq_B.astype(matmul_type)))
     Y = c.astype(A.dtype) + bias
     return Y
-
-# TODO(george) is a pack function need to pack or quantize the numbers into NBits for testing?
 
 class MatMulNBits(Base):
   @staticmethod
@@ -235,7 +231,7 @@ class MatMulNBits(Base):
                                  outputs = ['y'],
                                  accuracy_level = 0,
                                  K = 33,
-                                 N = 2,
+                                 N = 3,
                                  bits = 4,
                                  block_size = 16)
     a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
@@ -418,7 +414,7 @@ class MatMulNBits(Base):
                                  outputs = ['y'],
                                  accuracy_level = 0,
                                  K = 33,
-                                 N = 2,
+                                 N = 3,
                                  bits = 2,
                                  block_size = 16)
     a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
@@ -443,7 +439,7 @@ class MatMulNBits(Base):
                                  inputs = ['a', 'b', 'scales', 'zero_points', 'bias'],
                                  outputs = ['y'],
                                  K = 33,
-                                 N = 2,
+                                 N = 3,
                                  bits = 3,
                                  block_size = 16)
     a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
@@ -468,7 +464,7 @@ class MatMulNBits(Base):
                                  inputs = ['a', 'b', 'scales', 'zero_points', 'bias'],
                                  outputs = ['y'],
                                  K = 20,
-                                 N = 2,
+                                 N = 3,
                                  bits = 5,
                                  block_size = 16)
     a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
@@ -492,7 +488,7 @@ class MatMulNBits(Base):
                                  inputs = ['a', 'b', 'scales', 'zero_points', 'bias'],
                                  outputs = ['y'],
                                  K = 20,
-                                 N = 2,
+                                 N = 3,
                                  bits = 6,
                                  block_size = 16)
     a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
@@ -516,7 +512,7 @@ class MatMulNBits(Base):
                                  inputs = ['a', 'b', 'scales', 'zero_points', 'bias'],
                                  outputs = ['y'],
                                  K = 16,
-                                 N = 2,
+                                 N = 3,
                                  bits = 7,
                                  block_size = 16)
     a = np.array([1.0,   2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
@@ -527,9 +523,8 @@ class MatMulNBits(Base):
                   0x81,0x40,0x20,0x10,0x08,0x04,0x02,0x81,0x40,0x20,0x10,0x08,0x04,0x02,
                   0x81,0x40,0x20,0x10,0x08,0x04,0x02,0x81,0x40,0x20,0x10,0x08,0x04,0x02,],
                  dtype=np.uint8).reshape((3,14))
-    scales = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
-    zero_points = np.array([0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8)
+    scales = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+    zero_points = np.array([0x00,0x00,0x00], dtype=np.uint8)
     bias = np.array([0, 0, 0], dtype=np.float32)
     y = matmulnbits_reference_implementation(a, b, scales, zero_points, bias, K=16, N=3, bits=7, block_size=16)
     expect(node, inputs=[a, b, scales, zero_points, bias], outputs=[y], name="test_matmulnbits_7bit")
-# TODO(george) add a test for at least each input configuration and adjusted attribute

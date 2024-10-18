@@ -2215,7 +2215,9 @@ ONNX_OPERATOR_SET_SCHEMA(
           }
 
           if (scales_shape.dim(0).has_dim_value() && ((N * n_blocks_per_col) != scales_shape.dim(0).dim_value())) {
-            fail_shape_inference("Input scales dimensions is incompatible for MatMulNBits.");
+            fail_shape_inference("Input scales dimensions is incompatible for MatMulNBits expected ",
+                                 "[N * n_blocks_per_col] which is [", (N * n_blocks_per_col), "] got [",
+                                  scales_shape.dim(0).dim_value(), "].");
           }
 
           if (ctx.hasInput(3)) {  // has zero_points
@@ -2229,17 +2231,21 @@ ONNX_OPERATOR_SET_SCHEMA(
             if (zero_points_shape.dim_size() != 1) {
               fail_type_inference("Input zero_points tensor is of wrong rank.");
             }
-            int64_t bits_per_zero_points = ceil(((N * n_blocks_per_col + 1) * bits) / 8);
             if (zero_points_shape.dim(0).has_dim_value()) {
+              int64_t bits_per_zero_points = N * ceil((n_blocks_per_col * bits) / 8.0);
               int64_t b_dtype = b_type->tensor_type().elem_type();
               int64_t scales_dtype = scales_type->tensor_type().elem_type();
               int64_t zero_points_dtype = zero_points_type->tensor_type().elem_type();
               if (zero_points_dtype == scales_dtype &&
                   zero_points_shape.dim(0).dim_value() != (N * n_blocks_per_col)) {
-                fail_shape_inference("Input zero_points dimensions is incompatible for MatMulNBits.");
+                fail_shape_inference("Input zero_points dimensions is incompatible for MatMulNBits expected ",
+                                     "[N * n_blocks_per_col] which is [", (N * n_blocks_per_col), "] got [",
+                                     zero_points_shape.dim(0).dim_value(), "].");
               }
               if (zero_points_dtype == b_dtype && zero_points_shape.dim(0).dim_value() != bits_per_zero_points) {
-                fail_shape_inference("Input zero_points dimensions is incompatible for MatMulNBits.");
+                fail_shape_inference("Input uint8 zero_points dimensions is incompatible for MatMulNBits expected ",
+                                     "[N * CeilDiv(n_blocks_per_col * bits, 8)] which is [", bits_per_zero_points,
+                                     "] got [", zero_points_shape.dim(0).dim_value(), "].");
               }
             }
           }
