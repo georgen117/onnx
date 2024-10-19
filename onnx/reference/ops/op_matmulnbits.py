@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 from math import ceil
-import traceback
+from typing import Tuple
 
 from onnx.reference.op_run import OpRun
 
@@ -39,7 +39,7 @@ def matmulnbits_unpack_zero_points(
 
     return np.array(unpacked_zp, dtype=np.uint8)
 
-def matmulnbits_unpack_B(
+def matmulnbits_unpack_b(
     B: np.ndarray,
     N: int,
     K: int,
@@ -53,7 +53,7 @@ def matmulnbits_unpack_B(
     for n in range(N):
         unpacked_row_buf = []
         current_bit_pos = 0
-        for n_bpc in range(n_blocks_per_col):
+        for _n_bpc in range(n_blocks_per_col):
             unpacked_col_buf = []
             while len(unpacked_col_buf) < block_size and (len(unpacked_row_buf) + len(unpacked_col_buf)) < K and current_bit_pos < total_bits:
                 byte_pos = (current_bit_pos // 8)
@@ -73,7 +73,7 @@ def matmulnbits_unpack_B(
 
     return unpacked_B
 
-def matmulnbits_dequantize_B(
+def matmulnbits_dequantize_b(
     B: np.ndarray,
     scales: np.ndarray,
     zero_points: np.ndarray,
@@ -88,7 +88,7 @@ def matmulnbits_dequantize_B(
     if zero_points.dtype != scales.dtype:
         zero_points = matmulnbits_unpack_zero_points(zero_points, N, n_blocks_per_col, bits).astype(scales.dtype)
 
-    unpacked_X = matmulnbits_unpack_B(B, N, K, n_blocks_per_col, bits, block_size).astype(scales.dtype)
+    unpacked_X = matmulnbits_unpack_b(B, N, K, n_blocks_per_col, bits, block_size).astype(scales.dtype)
 
     dq_B = np.empty((N, K), dtype=scales.dtype)
     for n in range(N):
@@ -101,7 +101,7 @@ def matmulnbits_dequantize_B(
 
     return dq_B
 
-def matmulnbits_quantize_A_block_wise_no_zp(
+def matmulnbits_quantize_a_block_wise_no_zp(
     X: np.ndarray,
     block_size: int
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -124,7 +124,7 @@ def matmulnbits_quantize_A_block_wise_no_zp(
             scales[m * num_blocks + i] = scale
     return quantized_X, scales
 
-def matmulnbits_dequantize_A_block_wise(
+def matmulnbits_dequantize_a_block_wise(
     quantized_A: np.ndarray,
     block_size: int,
     scales: np.ndarray,
@@ -160,10 +160,18 @@ class MatMulNBits(OpRun):
         bits=None,
         block_size=None):  # type: ignore
         #traceback.print_stack()
+        # validate ndim of required inputs
         if A.ndim != 2:
-            raise ValueError("Input A must be a 2-dimensional tensor.")
+            raise ValueError("Input A must be a 2-dimensional tensor of shape.")
         if B.ndim < 2 or B.ndim > 3:
             raise ValueError("Input B must be a 2-dimensional or 3-dimensional tensor.")
+        if scales.ndim != 1:
+            raise ValueError("Scales must be a 1-dimensional tensor.")
+        if zero_points is not None and zero_points.ndim != 1:
+            raise ValueError("Zero points must be a 1-dimensional tensor.")
+        if bias is not None and bias.ndim != 1:
+            raise ValueError("Bias must be a 1-dimensional tensor.")
+        # Check attributes and set defaults if not provided
         if K is None:
             K = A.shape[1]
         if N is None:
@@ -174,46 +182,47 @@ class MatMulNBits(OpRun):
             bits = 4
         if block_size is None:
             block_size = 128
-        if bias is None:
-            bias = np.zeros(N, dtype=A.dtype)
-        if zero_points is None:
-            zero_points = np.full(scales.shape, 2**(bits-1), dtype=A.dtype)
-        if K != A.shape[1]:
+
+        if accuracy_level < 0 or accuracy_level > 4:
+            raise ValueError("accuracy_level must be between 0 and 4.")
+        if block_size < 16 or (block_size & (block_size - 1)) != 0:
+            raise ValueError("block_size must be a power of 2 and not smaller than 16.")
+        
+        # validate inputs shapes are valid
+        if A.shape[1] != K:
             raise ValueError("K must be equal to the number of columns in A.")
-        if N != B.shape[0]:
+        if B.shape[0] != N:
             raise ValueError("N must be equal to the number of rows in B.")
         n_blocks_per_col = (K + block_size - 1) // block_size
         blob_size = ceil((block_size * bits)/8)
-        b_shape_error = "B must have the shape [N][n_blocks_per_col][blob_size] or [N][n_blocks_per_col * blob_size]. "\
-                        "Where n_blocks_per_col = (K + block_size - 1) / block_size and "\
-                        "blob_size = CeilDiv((block_size * bits),8)."
+        b_shape_error = ("B must have the shape [N][n_blocks_per_col][blob_size] or [N][n_blocks_per_col * blob_size]. "
+                        "Where n_blocks_per_col = (K + block_size - 1) / block_size and "
+                        "blob_size = CeilDiv((block_size * bits),8).")
         if B.ndim == 2:
             if B.shape[1] != (n_blocks_per_col * blob_size):
                 raise ValueError(b_shape_error)
         if B.ndim == 3:
             if B.shape[1] != n_blocks_per_col or B.shape[2] != blob_size:
                 raise ValueError(b_shape_error)
+        if scales.shape[0] != N * n_blocks_per_col:
+            raise ValueError("Scales must have the shape [N][n_blocks_per_col]. "
+                             "Where n_blocks_per_col = (K + block_size - 1) / block_size.")
+        if zero_points is None:
+            zero_points = np.full(scales.shape, 2**(bits-1), dtype=A.dtype)
+        if zero_points.shape[0] != N * n_blocks_per_col:
+            raise ValueError("Zero points must have the shape [N][n_blocks_per_col]. "
+                             "Where n_blocks_per_col = (K + block_size - 1) / block_size.")
+        if bias is None:
+            bias = np.zeros(N, dtype=A.dtype)
+        if bias.shape[0] != N:
+            raise ValueError("Bias must have the shape [N].")
+        
+        if B.ndim == 3:
             # reshape B from [N][n_blocks_per_col][blob_size] to [N][n_blocks_per_col * blob_size]
             # all the functions assume B is in this shape
             B = B.reshape((B.shape[0], -1))
-        if block_size < 16 or (block_size & (block_size - 1)) != 0:
-            raise ValueError("block_size must be a power of 2 and not smaller than 16.")
-        dq_B = matmulnbits_dequantize_B(B, scales, zero_points, N, K, bits, block_size)
+        dq_B = matmulnbits_dequantize_b(B, scales, zero_points, N, K, bits, block_size)
 
-        print('-----------------------------------------')
-        print("A: ", A)
-        print("B: ", B)
-        print("dq_B: ", dq_B)
-        print("scales: ", scales)
-        print("zero_points: ", zero_points)
-        print("bias: ", bias)
-        print("K: ", K)
-        print("N: ", N)
-        print("accuracy_level: ", accuracy_level)
-        print("bits: ", bits)
-        print("block_size: ", block_size)
-
-        # accuracy_level defaults to 0 which means the type used for matmul type matches A.dtype
         accuracy_map = {
             0: A.dtype,
             1: np.float32,
@@ -226,8 +235,8 @@ class MatMulNBits(OpRun):
             # quantize/dequantize A block wise. This simiulates quantization
             # of input A with with accuracy_level 4 by quantizing A to int8 losing the
             # accuracy of the original A
-            q_A, A_scales = matmulnbits_quantize_A_block_wise_no_zp(A, block_size)
-            dq_A = matmulnbits_dequantize_A_block_wise(q_A, block_size, A_scales)
+            q_A, A_scales = matmulnbits_quantize_a_block_wise_no_zp(A, block_size)
+            dq_A = matmulnbits_dequantize_a_block_wise(q_A, block_size, A_scales)
             c = np.matmul(dq_A.astype(A.dtype), np.transpose(dq_B.astype(A.dtype)))
         else:
             c = np.matmul(A.astype(matmul_type), np.transpose(dq_B.astype(matmul_type)))
