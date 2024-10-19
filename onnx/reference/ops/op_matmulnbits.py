@@ -205,13 +205,19 @@ class MatMulNBits(OpRun):
             if B.shape[1] != n_blocks_per_col or B.shape[2] != blob_size:
                 raise ValueError(b_shape_error)
         if scales.shape[0] != N * n_blocks_per_col:
-            raise ValueError("Scales must have the shape [N][n_blocks_per_col]. "
+            raise ValueError("Scales must have the shape [N * n_blocks_per_col]. "
                              "Where n_blocks_per_col = (K + block_size - 1) / block_size.")
         if zero_points is None:
             zero_points = np.full(scales.shape, 2**(bits-1), dtype=A.dtype)
-        if zero_points.shape[0] != N * n_blocks_per_col:
-            raise ValueError("Zero points must have the shape [N][n_blocks_per_col]. "
-                             "Where n_blocks_per_col = (K + block_size - 1) / block_size.")
+        zero_points_shape_error = ("Zero points must have the shape [N * n_blocks_per_col] if the data type is the "
+                                   "same as A input. If the data type is uint8, then zero points must have the shape "
+                                   "[N * CeilDiv((block_size * bits),8)].")
+        if zero_points.dtype == B.dtype:
+            if zero_points.shape[0] != N * ceil(n_blocks_per_col * bits / 8):
+                raise ValueError(zero_points_shape_error)
+        else:
+            if zero_points.shape[0] != N * n_blocks_per_col:
+                raise ValueError(zero_points_shape_error)
         if bias is None:
             bias = np.zeros(N, dtype=A.dtype)
         if bias.shape[0] != N:
