@@ -104,7 +104,7 @@ def matmulnbits_dequantize_b(
 def matmulnbits_quantize_a_block_wise_no_zp(
     X: np.ndarray,
     block_size: int
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     M = X.shape[0]
     K = X.shape[1]
     num_blocks = (K + block_size - 1) // block_size
@@ -187,7 +187,7 @@ class MatMulNBits(OpRun):
             raise ValueError("accuracy_level must be between 0 and 4.")
         if block_size < 16 or (block_size & (block_size - 1)) != 0:
             raise ValueError("block_size must be a power of 2 and not smaller than 16.")
-        
+
         # validate inputs shapes are valid
         if A.shape[1] != K:
             raise ValueError("K must be equal to the number of columns in A.")
@@ -212,17 +212,17 @@ class MatMulNBits(OpRun):
         zero_points_shape_error = ("Zero points must have the shape [N * n_blocks_per_col] if the data type is the "
                                    "same as A input. If the data type is uint8, then zero points must have the shape "
                                    "[N * CeilDiv((block_size * bits),8)].")
+        # zero_points will had a different shape depending if it is uint8 or float
         if zero_points.dtype == B.dtype:
             if zero_points.shape[0] != N * ceil(n_blocks_per_col * bits / 8):
                 raise ValueError(zero_points_shape_error)
-        else:
-            if zero_points.shape[0] != N * n_blocks_per_col:
-                raise ValueError(zero_points_shape_error)
+        elif zero_points.shape[0] != N * n_blocks_per_col:
+            raise ValueError(zero_points_shape_error)
         if bias is None:
             bias = np.zeros(N, dtype=A.dtype)
         if bias.shape[0] != N:
             raise ValueError("Bias must have the shape [N].")
-        
+
         if B.ndim == 3:
             # reshape B from [N][n_blocks_per_col][blob_size] to [N][n_blocks_per_col * blob_size]
             # all the functions assume B is in this shape
