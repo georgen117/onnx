@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import numpy as np
 from math import ceil
-from typing import Tuple
 
 from onnx.reference.op_run import OpRun
 
@@ -149,17 +148,16 @@ def matmulnbits_dequantize_a_block_wise(
 class MatMulNBits(OpRun):
     def _run(
         self,
-        A,
-        B,
-        scales,
-        zero_points= None,
-        bias = None,
-        K = None,
-        N = None,
-        accuracy_level=None,
-        bits=None,
-        block_size=None):  # type: ignore
-        #traceback.print_stack()
+        A: np.ndarray,
+        B: np.ndarray,
+        scales: np.ndarray,
+        zero_points: np.ndarray | None = None,
+        bias: np.ndarray| None = None,
+        K: int | None = None,
+        N: int | None = None,
+        accuracy_level: int | None = None,
+        bits: int | None = None,
+        block_size: int | None = None) -> tuple[np.ndarray,]:
         # validate ndim of required inputs
         if A.ndim != 2:
             raise ValueError("Input A must be a 2-dimensional tensor of shape.")
