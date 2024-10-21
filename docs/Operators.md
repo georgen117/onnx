@@ -15599,6 +15599,7 @@ expect(
           Byte 0: [ B B B B A A A A ] -> A[0:3], B[4:7]
           Byte 1: [ . . . .  C C C C] -> C[0:3]
         ```
+
       - for 3,5,6,7 bits, 32x3bit,32x5bit,16x6bit,32x7bit are stored in 12x`uint8_t`, 20x`uint8_t`, 12x`uint8_t`,
         28x`uint8_t` separately. no bits are wasted.
         ```
