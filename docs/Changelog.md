@@ -28795,17 +28795,17 @@ This version of the operator has been available since version 23 of the default 
 
 ### <a name="MatMulNBits-23"></a>**MatMulNBits-23**</a>
 
-MatMulNBits is a MatMul with weight quantized with N bits(e.g., 2, 3, 4, 5, 6, 7).It does Matrix Multiplication like
+  MatMulNBits is a MatMul with weight quantized with N bits (e.g., 2, 3, 4, 5, 6, 7). It does Matrix Multiplication like
   [MatMul](#matmul) with differences:
 
-  1. Input B is a 2D constant Matrix. Its input feature count and output feature count are specified by attributes 'K'
+  1. Input `B` is a 2D constant Matrix. Its input feature count and output feature count are specified by attributes 'K'
      and 'N'.
-  2. Input B is quantized with x bits which is specified by attribute 'bits'. It is quantized blockwisely along
+  2. Input `B` is quantized with x bits which is specified by attribute 'bits'. It is quantized blockwisely along
      dimension 0 (e.g. column) with block size specified by attribute block_size. And block_size is not an arbitrary
      number and must be a power of 2 and not smaller than 16, like 16, 32, 64, 128,..
-  3. Input B's scale and zero point are specified by input scales and zero_points.
+  3. Input `B`'s scale and zero point are specified by input scales and zero_points.
 
-      Input B is stored as uint8_t with shape: `[N][n_blocks_per_col][blob_size]` or
+      Input `B` is stored as uint8_t with shape: `[N][n_blocks_per_col][blob_size]` or
       `[N][n_blocks_per_col * blob_size]`
 
       in which:
@@ -28813,10 +28813,10 @@ MatMulNBits is a MatMul with weight quantized with N bits(e.g., 2, 3, 4, 5, 6, 7
         - `blob_size` = `CeilDiv(block_size * bits, bitsof(uint8_t)<8>)`
 
       For all bits from 2-8, a row of data is tightly packed and represented by uint8_t.
-      The bit packing specified for (4 bit integer types)[ https://onnx.ai/onnx/technical/int4.html] is followed.
+      The bit packing specified for [4 bit integer types](https://onnx.ai/onnx/technical/int4.html) is followed.
       The sub-byte values always start from the LSB of the byte.
- 
-      - for 2,4,8 bits, 4x2bit,2x4bit,1x8bit are stored in one uint8_t.
+
+      - for 2,4,8 bits, 4x2bit,2x4bit,1x8bit are stored in one `uint8_t`.
         ```
           4bit example: with 3x4bit values
           Value A: 4 bits (Bits 0:3 in byte 0)
@@ -28826,7 +28826,8 @@ MatMulNBits is a MatMul with weight quantized with N bits(e.g., 2, 3, 4, 5, 6, 7
           Byte 0: [ B B B B A A A A ] -> A[0:3], B[4:7]
           Byte 1: [ . . . .  C C C C] -> C[0:3]
         ```
-      - for 3,5,6,7 bits, 32x3bit,32x5bit,16x6bit,32x7bit are stored in 12xuint8_t,20xuint8_t,12xuint8_t,28xuint8_t separately. no bits are wasted.
+      - for 3,5,6,7 bits, 32x3bit,32x5bit,16x6bit,32x7bit are stored in 12x`uint8_t`, 20x`uint8_t`, 12x`uint8_t`,
+        28x`uint8_t` separately. no bits are wasted.
         ```
           3bit example: with 3x3bit values
           Value A: 3 bits (Bits 0:2 in byte 0)
@@ -28835,16 +28836,17 @@ MatMulNBits is a MatMul with weight quantized with N bits(e.g., 2, 3, 4, 5, 6, 7
           Packed Bit Layout:
           Byte 0: [ C C B B B A A A ] -> A[0:2], B[3:5], C[6:7]
           Byte 1: [ . . . . . . . C ] -> C[0]
-
         ```
-    The last uint_8 byte may have some bits unused.
+    The last `uint_8` byte may have some bits unused.
 
 
-  Input scales is stored in same type as original type of B(float32, float16) with shape like: [N * n_blocks_per_col]
-  Input zero_points is stored as uint8_t or same as type(A). It has the same packing method as input B.
-    - [N * CeilDiv(n_blocks_per_col * bits, 8)]
-    If zero_points has same type as A, it's not packed and has the same shape as Scales.
-    If zero_points is not provided then zero_points will be set to 2^(bits - 1).
+  Input `scales` is stored in same type as original type of B(`float32`, `float16`) with shape like:
+  `[N * n_blocks_per_col]`
+
+  Input `zero_points` is stored as `uint8_t` or the same type as `A`. It has the same packing method as input `B`.
+    - `[N * CeilDiv(n_blocks_per_col * bits, 8)]`
+    If `zero_points` has same type as `A`, it's not packed and has the same shape as `scales`.
+    If `zero_points` is not provided then zero_points will be set to `2^(bits - 1)`.
 
 #### Version
 
