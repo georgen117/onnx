@@ -15783,8 +15783,9 @@ expect(node, inputs=[a, b, scales, zero_points], outputs=[y], name="test_matmuln
 <details>
 <summary>matmulnbits_with_bias</summary>
 ```python
+def export_matmulnbits_with_bias() -> None:
 node = onnx.helper.make_node(op_type = "MatMulNBits",
-                             inputs = ['a', 'b', 'scales', 'zero_points', 'bias'],
+                             inputs = ['a', 'b', 'scales', '', 'bias'],
                              outputs = ['y'],
                              K = 4,
                              N = 3,
@@ -15795,10 +15796,9 @@ b = np.array([0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
               0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
               0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8).reshape((3,8))
 scales = np.array([1.0,2.0,3.0], dtype=np.float32)
-zero_points = np.array([8.0, 8.0, 8.0], dtype=np.float32)
 bias = np.array([1.2, 3.4, 5.6], dtype=np.float32)
 y = matmulnbits_reference_implementation(a, b, scales, zero_points=None, bias=bias, K=4, N=3, bits=4, block_size=16)
-expect(node, inputs=[a, b, scales, zero_points, bias], outputs=[y], name="test_matmulnbits_with_bias")
+expect(node, inputs=[a, b, scales, bias], outputs=[y], name="test_matmulnbits_with_bias")
 ```
 </details>
 
