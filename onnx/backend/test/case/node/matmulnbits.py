@@ -9,7 +9,6 @@ import math
 import onnx
 from onnx.backend.test.case.base import Base
 from onnx.backend.test.case.node import expect
-from typing import Tuple
 
 def matmulnbits_unpack_zero_points(
     zero_points: np.ndarray,
