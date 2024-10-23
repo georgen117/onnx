@@ -55,7 +55,7 @@ def matmulnbits_unpack_B(
     for n in range(N):
         unpacked_row_buf = []
         current_bit_pos = 0
-        for n_bpc in range(n_blocks_per_col):
+        for _n_bpc in range(n_blocks_per_col):
             unpacked_col_buf = []
             while len(unpacked_col_buf) < block_size and (len(unpacked_row_buf) + len(unpacked_col_buf)) < K and current_bit_pos < total_bits:
                 byte_pos = (current_bit_pos // 8)
@@ -113,7 +113,7 @@ def matmulnbits_dequantize_B(
 def matmulnbits_quantize_A_block_wise_no_zp(
     X: np.ndarray,
     block_size: int
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     M = X.shape[0]
     K = X.shape[1]
     num_blocks = (K + block_size - 1) // block_size
@@ -307,8 +307,6 @@ class MatMulNBits(Base):
                   0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00,
                   0x11,0x11,0x00,0x00,0x00,0x00,0x00,0x00], dtype=np.uint8).reshape((3,8))
     scales = np.array([1.0,2.0,3.0], dtype=np.float32)
-    # Should be able to avoid zero_points but the test framework fails if an optional input is skipped
-    #zero_points = np.array([8.0, 8.0, 8.0], dtype=np.float32)
     bias = np.array([1.2, 3.4, 5.6], dtype=np.float32)
     y = matmulnbits_reference_implementation(a, b, scales, zero_points=None, bias=bias, K=4, N=3, bits=4, block_size=16)
     expect(node, inputs=[a, b, scales, bias], outputs=[y], name="test_matmulnbits_with_bias")
